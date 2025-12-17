@@ -1,6 +1,8 @@
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
+
 import "../../core/api_client.dart";
+import "../../core/config.dart";
 import "../../core/prefs.dart";
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -19,21 +21,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String? _error;
 
   Future<void> _login() async {
+    if (_loading) return;
+
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      await _api.postJson("/api/login", {
+      final res = await _api.postJson("/api/login", {
         "username": _u.text.trim(),
         "password": _p.text,
       });
 
+      // Your API returns: { "success": true } (or 401 with JSON message)
+      final ok = res["success"] == true;
+      final msg = (res["message"] is String) ? res["message"] as String : null;
+
+      if (!ok) {
+        setState(() {
+          _error = msg ?? "Login failed. Invalid username or password.";
+        });
+        return;
+      }
+
       await setAuthed(ref, true);
-    } catch (_) {
+    } catch (e) {
+      // ApiClient throws Exception("HTTP ...: body") on non-2xx
       setState(() {
-        _error = "Login failed. Check username/password and base URL.";
+        _error = "Login failed: ${e.toString()}";
       });
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -73,6 +89,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     textAlign: TextAlign.center,
                     style: t.bodySmall,
                   ),
+
+                  const SizedBox(height: 10),
+
+                  // Helpful while you’re fixing networking
+                  Text(
+                    "API: ${AppConfig.baseUrl}",
+                    textAlign: TextAlign.center,
+                    style: t.labelSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+
                   const SizedBox(height: 18),
 
                   TextField(
@@ -82,7 +111,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     decoration: const InputDecoration(
                       labelText: "Username",
                       prefixIcon: Icon(Icons.person_rounded),
-                      // ✅ No border here -> uses your InputDecorationTheme pill style
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -96,9 +124,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     decoration: const InputDecoration(
                       labelText: "Password",
                       prefixIcon: Icon(Icons.lock_rounded),
-                      // ✅ No border here -> uses your InputDecorationTheme pill style
                     ),
                   ),
+
                   const SizedBox(height: 14),
 
                   if (_error != null)
