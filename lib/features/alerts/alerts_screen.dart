@@ -4,6 +4,7 @@ import "package:shared_preferences/shared_preferences.dart";
 import "package:url_launcher/url_launcher.dart";
 import "../../core/api_client.dart";
 import "../../core/config.dart";
+import "../../core/theme/app_tokens.dart";
 import "../../models/alert_model.dart";
 
 class AlertsScreen extends StatefulWidget {
@@ -61,7 +62,6 @@ class _AlertsScreenState extends State<AlertsScreen> {
           .map((e) => AlertModel.fromJson(Map<String, dynamic>.from(e)))
           .toList();
 
-      // filter by cleared-until
       final cleared = await _clearedUntil();
       if (cleared != null) {
         list = list.where((a) {
@@ -124,9 +124,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
+          : (_error != null)
           ? Center(child: Text(_error!))
-          : _alerts.isEmpty
+          : (_alerts.isEmpty)
           ? const Center(child: Text("No alerts after last clear."))
           : ListView.separated(
               padding: const EdgeInsets.all(12),
@@ -140,11 +140,16 @@ class _AlertsScreenState extends State<AlertsScreen> {
                     : "$dt".split(".").first;
                 final who = a.username ?? "User #${a.userId}";
 
+                final color = a.isEnter ? AppTokens.success : AppTokens.danger;
+
                 return Card(
                   child: ListTile(
-                    leading: Icon(
-                      a.isEnter ? Icons.login_rounded : Icons.logout_rounded,
-                      color: a.isEnter ? Colors.green : Colors.red,
+                    leading: CircleAvatar(
+                      backgroundColor: color.withAlpha(28),
+                      foregroundColor: color,
+                      child: Icon(
+                        a.isEnter ? Icons.login_rounded : Icons.logout_rounded,
+                      ),
                     ),
                     title: Text(a.isEnter ? "Entered zone" : "Left zone"),
                     subtitle: Text("$who\n$timeText"),

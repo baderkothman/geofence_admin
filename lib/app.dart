@@ -2,6 +2,7 @@ import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
 import "core/prefs.dart";
+import "core/theme/app_theme.dart"; // ✅ add this
 import "features/auth/login_screen.dart";
 import "features/shell/app_shell.dart";
 
@@ -18,9 +19,14 @@ class GeofenceAdminApp extends ConsumerWidget {
       future: boot,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const MaterialApp(
+          return MaterialApp(
             debugShowCheckedModeBanner: false,
-            home: Scaffold(body: Center(child: CircularProgressIndicator())),
+            themeMode: themeMode,
+            theme: AppTheme.light(),
+            darkTheme: AppTheme.dark(),
+            home: const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            ),
           );
         }
 
@@ -28,51 +34,17 @@ class GeofenceAdminApp extends ConsumerWidget {
           debugShowCheckedModeBanner: false,
           title: "Geofence Admin",
           themeMode: themeMode,
-          theme: _lightTheme(),
-          darkTheme: _darkTheme(),
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
           home: authed
               ? AppShell(
                   onLogout: () => setAuthed(ref, false),
                   themeMode: themeMode,
-                  onThemeMode: (m) async {
-                    await setThemeMode(ref, m);
-                  },
+                  onThemeMode: (m) async => setThemeMode(ref, m),
                 )
               : const LoginScreen(),
         );
       },
-    );
-  }
-
-  ThemeData _lightTheme() {
-    final cs = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF2CB7B1),
-      brightness: Brightness.light,
-    );
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: cs,
-      scaffoldBackgroundColor: const Color(0xFFF7F7F5),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      ),
-    );
-  }
-
-  ThemeData _darkTheme() {
-    final cs = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF2CB7B1),
-      brightness: Brightness.dark,
-    );
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: cs,
-      scaffoldBackgroundColor: const Color(0xFF071226),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      ),
     );
   }
 }

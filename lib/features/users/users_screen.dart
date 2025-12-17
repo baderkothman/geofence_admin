@@ -3,6 +3,7 @@ import "package:flutter/material.dart";
 import "package:url_launcher/url_launcher.dart";
 import "../../core/api_client.dart";
 import "../../core/config.dart";
+import "../../core/theme/app_tokens.dart";
 import "../../models/user_model.dart";
 import "../logs/logs_screen.dart";
 import "track_screen.dart";
@@ -64,7 +65,7 @@ class _UsersScreenState extends State<UsersScreen> {
         _error = null;
         _loading = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _error = "Failed to load users";
@@ -75,10 +76,11 @@ class _UsersScreenState extends State<UsersScreen> {
 
   List<UserModel> get _filtered {
     final q = _search.trim().toLowerCase();
+
     final list = q.isEmpty
         ? _users
         : _users.where((u) {
-            final name = (u.fullName ?? "").toLowerCase();
+            final name = u.displayName.toLowerCase();
             final un = u.username.toLowerCase();
             final c = u.contact.toLowerCase();
             return name.contains(q) || un.contains(q) || c.contains(q);
@@ -87,16 +89,14 @@ class _UsersScreenState extends State<UsersScreen> {
     int cmp(UserModel a, UserModel b) {
       switch (_sort) {
         case UserSort.name:
-          return (a.fullName ?? a.username).toLowerCase().compareTo(
-            (b.fullName ?? b.username).toLowerCase(),
+          return a.displayName.toLowerCase().compareTo(
+            b.displayName.toLowerCase(),
           );
         case UserSort.username:
           return a.username.toLowerCase().compareTo(b.username.toLowerCase());
         case UserSort.lastSeen:
-          final ta =
-              DateTime.tryParse(a.lastSeen ?? "")?.millisecondsSinceEpoch ?? 0;
-          final tb =
-              DateTime.tryParse(b.lastSeen ?? "")?.millisecondsSinceEpoch ?? 0;
+          final ta = a.lastSeenDate?.millisecondsSinceEpoch ?? 0;
+          final tb = b.lastSeenDate?.millisecondsSinceEpoch ?? 0;
           return ta.compareTo(tb);
         case UserSort.zone:
           return (a.hasZone ? 1 : 0).compareTo(b.hasZone ? 1 : 0);
@@ -112,20 +112,11 @@ class _UsersScreenState extends State<UsersScreen> {
   List<UserModel> get _paged {
     final total = _filtered.length;
     final start = _page * _rowsPerPage;
-    if (start >= total && total > 0) {
-      // reset if list shrank
-      _page = 0;
-    }
+    if (start >= total && total > 0) _page = 0;
+
     final s = _page * _rowsPerPage;
     final e = (s + _rowsPerPage).clamp(0, total);
     return _filtered.sublist(s, e);
-  }
-
-  String _fmtLastSeen(String? iso) {
-    if (iso == null) return "Never";
-    final d = DateTime.tryParse(iso);
-    if (d == null) return "Never";
-    return "${d.toLocal()}".split(".").first;
   }
 
   Future<void> _openCsvForUser(int userId) async {
@@ -160,7 +151,6 @@ class _UsersScreenState extends State<UsersScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
           children: [
-            // Search + sort + rows per page
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -170,7 +160,7 @@ class _UsersScreenState extends State<UsersScreen> {
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.search_rounded),
                         hintText: "Search name / username / contact",
-                        border: OutlineInputBorder(),
+                        // ✅ no border override -> uses your pill InputDecorationTheme
                       ),
                       onChanged: (v) => setState(() {
                         _search = v;
@@ -178,6 +168,7 @@ class _UsersScreenState extends State<UsersScreen> {
                       }),
                     ),
                     const SizedBox(height: 10),
+
                     Row(
                       children: [
                         Expanded(
@@ -185,7 +176,7 @@ class _UsersScreenState extends State<UsersScreen> {
                             initialValue: _sort,
                             decoration: const InputDecoration(
                               labelText: "Sort",
-                              border: OutlineInputBorder(),
+                              // ✅ no border override
                             ),
                             items: const [
                               DropdownMenuItem(
@@ -226,7 +217,9 @@ class _UsersScreenState extends State<UsersScreen> {
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 10),
+
                     Row(
                       children: [
                         Expanded(
@@ -234,7 +227,7 @@ class _UsersScreenState extends State<UsersScreen> {
                             initialValue: _rowsPerPage,
                             decoration: const InputDecoration(
                               labelText: "Rows",
-                              border: OutlineInputBorder(),
+                              // ✅ no border override
                             ),
                             items: const [
                               DropdownMenuItem(value: 10, child: Text("10")),
@@ -270,7 +263,9 @@ class _UsersScreenState extends State<UsersScreen> {
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 8),
+
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
@@ -304,7 +299,6 @@ class _UsersScreenState extends State<UsersScreen> {
               ..._paged.map(
                 (u) => _UserCard(
                   user: u,
-                  lastSeenText: _fmtLastSeen(u.lastSeen),
                   onZone: () async {
                     await Navigator.push(
                       context,
@@ -312,7 +306,6 @@ class _UsersScreenState extends State<UsersScreen> {
                         builder: (_) => ZoneEditorScreen(user: u),
                       ),
                     );
-                    // refresh after closing
                     _fetch();
                   },
                   onTrack: u.hasZone
@@ -353,7 +346,6 @@ class _UsersScreenState extends State<UsersScreen> {
 
 class _UserCard extends StatelessWidget {
   final UserModel user;
-  final String lastSeenText;
   final VoidCallback onZone;
   final VoidCallback? onTrack;
   final VoidCallback? onLogs;
@@ -361,7 +353,6 @@ class _UserCard extends StatelessWidget {
 
   const _UserCard({
     required this.user,
-    required this.lastSeenText,
     required this.onZone,
     required this.onTrack,
     required this.onLogs,
@@ -371,10 +362,28 @@ class _UserCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+
+    final border = Theme.of(context).dividerColor;
 
     final statusColor = !user.hasZone
-        ? cs.outline
-        : (user.isInside ? Colors.green : Colors.red);
+        ? border
+        : (user.isInside ? AppTokens.success : AppTokens.danger);
+
+    final zoneBtnStyle = FilledButton.styleFrom(
+      backgroundColor: AppTokens.success,
+      foregroundColor: Colors.white,
+    );
+
+    final trackBtnStyle = FilledButton.styleFrom(
+      backgroundColor: AppTokens.danger,
+      foregroundColor: Colors.white,
+    );
+
+    final csvBtnStyle = FilledButton.styleFrom(
+      backgroundColor: AppTokens.warning,
+      foregroundColor: const Color(0xFF3B2A00),
+    );
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -386,10 +395,13 @@ class _UserCard extends StatelessWidget {
             Row(
               children: [
                 CircleAvatar(
+                  backgroundColor: cs.primary.withAlpha(36),
+                  foregroundColor: cs.primary,
                   child: Text(
                     user.username.isNotEmpty
                         ? user.username[0].toUpperCase()
                         : "?",
+                    style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -398,17 +410,19 @@ class _UserCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        user.fullName ?? "—",
+                        user.displayName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        style: t.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        "@${user.username} • Last seen: $lastSeenText",
+                        "@${user.username} • Last seen: ${user.lastSeenLocalText}",
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: t.bodySmall,
                       ),
                     ],
                   ),
@@ -423,7 +437,9 @@ class _UserCard extends StatelessWidget {
                 ),
               ],
             ),
+
             const SizedBox(height: 10),
+
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -441,19 +457,23 @@ class _UserCard extends StatelessWidget {
                 Chip(label: Text("Contact: ${user.contact}")),
               ],
             ),
+
             const SizedBox(height: 12),
+
             Wrap(
               spacing: 10,
               runSpacing: 10,
               children: [
                 FilledButton.icon(
+                  style: zoneBtnStyle,
                   onPressed: onZone,
                   icon: const Icon(Icons.my_location_rounded),
                   label: Text(
                     user.hasZone ? "View / Update Zone" : "Assign Zone",
                   ),
                 ),
-                OutlinedButton.icon(
+                FilledButton.icon(
+                  style: trackBtnStyle,
                   onPressed: onTrack,
                   icon: const Icon(Icons.location_searching_rounded),
                   label: const Text("Track"),
@@ -463,7 +483,8 @@ class _UserCard extends StatelessWidget {
                   icon: const Icon(Icons.receipt_long_rounded),
                   label: const Text("Logs"),
                 ),
-                OutlinedButton.icon(
+                FilledButton.icon(
+                  style: csvBtnStyle,
                   onPressed: onCsv,
                   icon: const Icon(Icons.download_rounded),
                   label: const Text("CSV"),

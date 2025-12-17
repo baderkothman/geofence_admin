@@ -49,6 +49,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+
     return Scaffold(
       body: Center(
         child: ConstrainedBox(
@@ -56,48 +58,74 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           child: Card(
             margin: const EdgeInsets.all(16),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const SizedBox(height: 8),
-                  const Text(
+                  const SizedBox(height: 6),
+                  Text(
                     "Admin Login",
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                    style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 6),
+                  Text(
+                    "Sign in to manage users, zones, and alerts.",
+                    textAlign: TextAlign.center,
+                    style: t.bodySmall,
+                  ),
+                  const SizedBox(height: 18),
+
                   TextField(
                     controller: _u,
-                    decoration: const InputDecoration(labelText: "Username"),
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.username],
+                    decoration: const InputDecoration(
+                      labelText: "Username",
+                      prefixIcon: Icon(Icons.person_rounded),
+                      // ✅ No border here -> uses your InputDecorationTheme pill style
+                    ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
+
                   TextField(
                     controller: _p,
                     obscureText: true,
-                    decoration: const InputDecoration(labelText: "Password"),
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _loading ? null : _login(),
+                    autofillHints: const [AutofillHints.password],
+                    decoration: const InputDecoration(
+                      labelText: "Password",
+                      prefixIcon: Icon(Icons.lock_rounded),
+                      // ✅ No border here -> uses your InputDecorationTheme pill style
+                    ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
+
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: Text(
                         _error!,
+                        textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.error,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
+
                   SizedBox(
                     width: double.infinity,
-                    child: FilledButton(
+                    child: FilledButton.icon(
                       onPressed: _loading ? null : _login,
-                      child: _loading
+                      icon: _loading
                           ? const SizedBox(
                               height: 18,
                               width: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text("Login"),
+                          : const Icon(Icons.login_rounded),
+                      label: Text(_loading ? "Signing in..." : "Login"),
                     ),
                   ),
                 ],

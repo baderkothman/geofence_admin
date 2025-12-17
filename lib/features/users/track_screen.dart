@@ -2,6 +2,7 @@ import "dart:async";
 import "package:flutter/material.dart";
 import "package:url_launcher/url_launcher.dart";
 import "../../core/api_client.dart";
+import "../../core/theme/app_tokens.dart";
 import "../../models/user_model.dart";
 
 class TrackScreen extends StatefulWidget {
@@ -20,14 +21,21 @@ class _TrackScreenState extends State<TrackScreen> {
 
   UserModel? _user;
   bool _loading = true;
-  bool _following = true; // this is what “Following / Not following” is for
+  bool _following = true; // ✅ now actually controls auto refresh
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _load(initial: true);
-    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _load());
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (_following) _load();
+    });
   }
 
   @override
@@ -50,8 +58,8 @@ class _TrackScreenState extends State<TrackScreen> {
           .where((x) => x.id == widget.userId)
           .cast<UserModel?>()
           .first;
-      if (!mounted) return;
 
+      if (!mounted) return;
       setState(() {
         _user = u;
         _error = null;
@@ -77,15 +85,20 @@ class _TrackScreenState extends State<TrackScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+
     final lat = _user?.lastLatitude;
     final lng = _user?.lastLongitude;
+    final hasCoords = lat != null && lng != null;
 
     return Scaffold(
       appBar: AppBar(
         title: Text("Track • ${widget.username}"),
         actions: [
           TextButton.icon(
-            onPressed: () => setState(() => _following = !_following),
+            onPressed: () {
+              setState(() => _following = !_following);
+            },
             icon: Icon(_following ? Icons.gps_fixed : Icons.gps_off),
             label: Text(_following ? "Following" : "Not following"),
           ),
@@ -98,7 +111,7 @@ class _TrackScreenState extends State<TrackScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
+          : (_error != null)
           ? Center(child: Text(_error!))
           : Padding(
               padding: const EdgeInsets.all(14),
@@ -110,30 +123,90 @@ class _TrackScreenState extends State<TrackScreen> {
                     children: [
                       Text(
                         "Last location",
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                        style: t.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                       const SizedBox(height: 10),
-                      Text("Latitude: ${lat ?? "—"}"),
-                      Text("Longitude: ${lng ?? "—"}"),
+
+                      _InfoRow(
+                        label: "Latitude",
+                        value: lat?.toString() ?? "—",
+                      ),
+                      const SizedBox(height: 6),
+                      _InfoRow(
+                        label: "Longitude",
+                        value: lng?.toString() ?? "—",
+                      ),
                       const SizedBox(height: 10),
-                      Text("Last seen: ${_user?.lastSeen ?? "—"}"),
+                      _InfoRow(
+                        label: "Last seen",
+                        value: _user?.lastSeen ?? "—",
+                      ),
+
                       const Spacer(),
+
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
-                          onPressed: (lat != null && lng != null)
-                              ? _openGoogleMaps
-                              : null,
+                          onPressed: hasCoords ? _openGoogleMaps : null,
                           icon: const Icon(Icons.map_rounded),
                           label: const Text("Open in Google Maps"),
                         ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Small status hint like web UI
+                      Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _following
+                                  ? AppTokens.success
+                                  : AppTokens.warning,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _following
+                                ? "Auto-refresh is ON"
+                                : "Auto-refresh is OFF",
+                            style: t.bodySmall,
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ),
             ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _InfoRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Row(
+      children: [
+        SizedBox(
+          width: 92,
+          child: Text(
+            label,
+            style: t.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Expanded(child: Text(value)),
+      ],
     );
   }
 }
