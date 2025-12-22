@@ -1,6 +1,9 @@
 import "dart:async";
 import "package:flutter/material.dart";
+import "package:flutter_map/flutter_map.dart";
+import "package:latlong2/latlong.dart";
 import "package:url_launcher/url_launcher.dart";
+
 import "../../core/api_client.dart";
 import "../../core/theme/app_tokens.dart";
 import "../../models/user_model.dart";
@@ -17,22 +20,18 @@ class TrackScreen extends StatefulWidget {
 
 class _TrackScreenState extends State<TrackScreen> {
   final _api = ApiClient();
+  final MapController _map = MapController();
   Timer? _timer;
 
   UserModel? _user;
   bool _loading = true;
-  bool _following = true; // ✅ now actually controls auto refresh
+  bool _following = true;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _load(initial: true);
-    _startTimer();
-  }
-
-  void _startTimer() {
-    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (_following) _load();
     });
@@ -52,19 +51,33 @@ class _TrackScreenState extends State<TrackScreen> {
       final users = raw
           .whereType<Map>()
           .map((e) => UserModel.fromJson(Map<String, dynamic>.from(e)))
+          .where((u) => u.role != "admin")
           .toList();
 
-      final u = users
-          .where((x) => x.id == widget.userId)
-          .cast<UserModel?>()
-          .first;
+      final u = users.firstWhere(
+        (x) => x.id == widget.userId,
+        orElse: () =>
+            users.isNotEmpty ? users.first : UserModel.fromJson(const {}),
+      );
 
       if (!mounted) return;
       setState(() {
-        _user = u;
-        _error = null;
+        _user = u.id == widget.userId ? u : null;
+        _error = _user == null ? "User not found" : null;
         _loading = false;
       });
+
+      // Auto move map to latest location if available
+      final lat = _user?.lastLatitude;
+      final lng = _user?.lastLongitude;
+      if (lat != null && lng != null) {
+        final p = LatLng(lat, lng);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          try {
+            _map.move(p, _map.camera.zoom < 15 ? 16 : _map.camera.zoom);
+          } catch (_) {}
+        });
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -91,16 +104,25 @@ class _TrackScreenState extends State<TrackScreen> {
     final lng = _user?.lastLongitude;
     final hasCoords = lat != null && lng != null;
 
+    final zoneLat = _user?.zoneCenterLat;
+    final zoneLng = _user?.zoneCenterLng;
+    final zoneRadius = _user?.zoneRadiusM?.toDouble();
+
+    final hasZone = zoneLat != null && zoneLng != null && zoneRadius != null;
+
+    final fallback = const LatLng(33.8938, 35.5018); // Beirut
+    final center = hasCoords
+        ? LatLng(lat!, lng!)
+        : (hasZone ? LatLng(zoneLat!, zoneLng!) : fallback);
+
     return Scaffold(
       appBar: AppBar(
         title: Text("Track • ${widget.username}"),
         actions: [
           TextButton.icon(
-            onPressed: () {
-              setState(() => _following = !_following);
-            },
+            onPressed: () => setState(() => _following = !_following),
             icon: Icon(_following ? Icons.gps_fixed : Icons.gps_off),
-            label: Text(_following ? "Following" : "Not following"),
+            label: Text(_following ? "Following" : "Paused"),
           ),
           IconButton(
             tooltip: "Refresh now",
@@ -113,75 +135,168 @@ class _TrackScreenState extends State<TrackScreen> {
           ? const Center(child: CircularProgressIndicator())
           : (_error != null)
           ? Center(child: Text(_error!))
-          : Padding(
+          : ListView(
               padding: const EdgeInsets.all(14),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Last location",
-                        style: t.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
+              children: [
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Live map",
+                          style: t.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-
-                      _InfoRow(
-                        label: "Latitude",
-                        value: lat?.toString() ?? "—",
-                      ),
-                      const SizedBox(height: 6),
-                      _InfoRow(
-                        label: "Longitude",
-                        value: lng?.toString() ?? "—",
-                      ),
-                      const SizedBox(height: 10),
-                      _InfoRow(
-                        label: "Last seen",
-                        value: _user?.lastSeen ?? "—",
-                      ),
-
-                      const Spacer(),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: hasCoords ? _openGoogleMaps : null,
-                          icon: const Icon(Icons.map_rounded),
-                          label: const Text("Open in Google Maps"),
+                        const SizedBox(height: 6),
+                        Text(
+                          hasCoords
+                              ? "Showing last known location."
+                              : "No location coordinates yet (waiting for mobile user updates).",
+                          style: t.bodySmall,
                         ),
-                      ),
-                      const SizedBox(height: 10),
+                        const SizedBox(height: 12),
 
-                      // Small status hint like web UI
-                      Row(
-                        children: [
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: _following
-                                  ? AppTokens.success
-                                  : AppTokens.warning,
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(AppTokens.radius),
+                          child: SizedBox(
+                            height: 320,
+                            width: double.infinity,
+                            child: FlutterMap(
+                              mapController: _map,
+                              options: MapOptions(
+                                initialCenter: center,
+                                initialZoom: hasCoords ? 16 : 13,
+                                interactionOptions: const InteractionOptions(
+                                  flags: InteractiveFlag.all,
+                                ),
+                              ),
+                              children: [
+                                TileLayer(
+                                  urlTemplate:
+                                      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                                  userAgentPackageName: "geofence_admin",
+                                ),
+
+                                if (hasZone)
+                                  CircleLayer(
+                                    circles: [
+                                      CircleMarker(
+                                        point: LatLng(zoneLat!, zoneLng!),
+                                        radius: zoneRadius!,
+                                        useRadiusInMeter: true,
+                                        color: AppTokens.success.withAlpha(30),
+                                        borderStrokeWidth: 2,
+                                        borderColor: AppTokens.success
+                                            .withAlpha(170),
+                                      ),
+                                    ],
+                                  ),
+
+                                MarkerLayer(
+                                  markers: [
+                                    if (hasZone)
+                                      Marker(
+                                        point: LatLng(zoneLat!, zoneLng!),
+                                        width: 44,
+                                        height: 44,
+                                        child: const Icon(
+                                          Icons.radio_button_checked_rounded,
+                                          color: AppTokens.success,
+                                          size: 28,
+                                        ),
+                                      ),
+                                    if (hasCoords)
+                                      Marker(
+                                        point: LatLng(lat!, lng!),
+                                        width: 54,
+                                        height: 54,
+                                        child: const Icon(
+                                          Icons.location_on_rounded,
+                                          color: AppTokens.danger,
+                                          size: 54,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            _following
-                                ? "Auto-refresh is ON"
-                                : "Auto-refresh is OFF",
-                            style: t.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ],
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _following
+                                    ? AppTokens.success
+                                    : AppTokens.warning,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _following
+                                  ? "Auto-refresh is ON"
+                                  : "Auto-refresh is OFF",
+                              style: t.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+
+                const SizedBox(height: 12),
+
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Last location",
+                          style: t.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _InfoRow(
+                          label: "Latitude",
+                          value: lat?.toString() ?? "—",
+                        ),
+                        const SizedBox(height: 6),
+                        _InfoRow(
+                          label: "Longitude",
+                          value: lng?.toString() ?? "—",
+                        ),
+                        const SizedBox(height: 10),
+                        _InfoRow(
+                          label: "Last seen",
+                          value: _user?.lastSeenLocalText ?? "—",
+                        ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: hasCoords ? _openGoogleMaps : null,
+                            icon: const Icon(Icons.map_rounded),
+                            label: const Text("Open in Google Maps"),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
     );
   }
@@ -202,7 +317,7 @@ class _InfoRow extends StatelessWidget {
           width: 92,
           child: Text(
             label,
-            style: t.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+            style: t.bodySmall?.copyWith(fontWeight: FontWeight.w800),
           ),
         ),
         Expanded(child: Text(value)),

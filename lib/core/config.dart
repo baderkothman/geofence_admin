@@ -23,8 +23,9 @@ class AppConfig {
   static String baseUrl = _fallbackLan;
 
   static String get defaultBaseUrl {
-    if (_dartDefineBaseUrl.trim().isNotEmpty)
+    if (_dartDefineBaseUrl.trim().isNotEmpty) {
       return _normalize(_dartDefineBaseUrl);
+    }
 
     // Reasonable defaults (can still be overridden in Settings)
     if (Platform.isAndroid) return _androidEmulator; // best for emulator

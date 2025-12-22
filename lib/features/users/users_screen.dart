@@ -1,15 +1,19 @@
 import "dart:async";
 import "package:flutter/material.dart";
 import "package:url_launcher/url_launcher.dart";
+
 import "../../core/api_client.dart";
 import "../../core/config.dart";
 import "../../core/theme/app_tokens.dart";
 import "../../models/user_model.dart";
+
 import "../logs/logs_screen.dart";
 import "track_screen.dart";
 import "zone_editor_screen.dart";
 
-enum UserSort { name, username, lastSeen, zone, status }
+enum ZoneFilter { all, assigned, none }
+
+enum StatusFilter { all, inside, outside }
 
 class UsersScreen extends StatefulWidget {
   final VoidCallback onLogout;
@@ -21,19 +25,15 @@ class UsersScreen extends StatefulWidget {
 
 class _UsersScreenState extends State<UsersScreen> {
   final _api = ApiClient();
+  Timer? _timer;
 
   List<UserModel> _users = [];
   bool _loading = true;
   String? _error;
 
-  Timer? _timer;
-
   String _search = "";
-  int _rowsPerPage = 10;
-  int _page = 0;
-
-  UserSort _sort = UserSort.name;
-  bool _asc = true;
+  ZoneFilter _zoneFilter = ZoneFilter.all;
+  StatusFilter _statusFilter = StatusFilter.all;
 
   @override
   void initState() {
@@ -77,46 +77,39 @@ class _UsersScreenState extends State<UsersScreen> {
   List<UserModel> get _filtered {
     final q = _search.trim().toLowerCase();
 
-    final list = q.isEmpty
-        ? _users
-        : _users.where((u) {
-            final name = u.displayName.toLowerCase();
-            final un = u.username.toLowerCase();
-            final c = u.contact.toLowerCase();
-            return name.contains(q) || un.contains(q) || c.contains(q);
-          }).toList();
+    Iterable<UserModel> list = _users;
 
-    int cmp(UserModel a, UserModel b) {
-      switch (_sort) {
-        case UserSort.name:
-          return a.displayName.toLowerCase().compareTo(
-            b.displayName.toLowerCase(),
-          );
-        case UserSort.username:
-          return a.username.toLowerCase().compareTo(b.username.toLowerCase());
-        case UserSort.lastSeen:
-          final ta = a.lastSeenDate?.millisecondsSinceEpoch ?? 0;
-          final tb = b.lastSeenDate?.millisecondsSinceEpoch ?? 0;
-          return ta.compareTo(tb);
-        case UserSort.zone:
-          return (a.hasZone ? 1 : 0).compareTo(b.hasZone ? 1 : 0);
-        case UserSort.status:
-          return (a.isInside ? 1 : 0).compareTo(b.isInside ? 1 : 0);
-      }
+    // Search
+    if (q.isNotEmpty) {
+      list = list.where((u) {
+        final name = u.displayName.toLowerCase();
+        final un = u.username.toLowerCase();
+        final c = u.contact.toLowerCase();
+        return name.contains(q) || un.contains(q) || c.contains(q);
+      });
     }
 
-    list.sort((a, b) => _asc ? cmp(a, b) : cmp(b, a));
-    return list;
-  }
+    // Zone filter
+    if (_zoneFilter == ZoneFilter.assigned) {
+      list = list.where((u) => u.hasZone);
+    } else if (_zoneFilter == ZoneFilter.none) {
+      list = list.where((u) => !u.hasZone);
+    }
 
-  List<UserModel> get _paged {
-    final total = _filtered.length;
-    final start = _page * _rowsPerPage;
-    if (start >= total && total > 0) _page = 0;
+    // Status filter (only meaningful if zone assigned)
+    if (_statusFilter == StatusFilter.inside) {
+      list = list.where((u) => u.hasZone && u.isInside);
+    } else if (_statusFilter == StatusFilter.outside) {
+      list = list.where((u) => u.hasZone && !u.isInside);
+    }
 
-    final s = _page * _rowsPerPage;
-    final e = (s + _rowsPerPage).clamp(0, total);
-    return _filtered.sublist(s, e);
+    // (Optional) Stable ordering so it doesn’t jump around
+    final out = list.toList()
+      ..sort(
+        (a, b) =>
+            a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
+      );
+    return out;
   }
 
   Future<void> _openCsvForUser(int userId) async {
@@ -126,9 +119,13 @@ class _UsersScreenState extends State<UsersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final total = _filtered.length;
-    final start = total == 0 ? 0 : (_page * _rowsPerPage) + 1;
-    final end = (_page * _rowsPerPage + _paged.length);
+    final t = Theme.of(context).textTheme;
+    final list = _filtered;
+
+    final assignedCount = _users.where((u) => u.hasZone).length;
+    final noneCount = _users.length - assignedCount;
+    final insideCount = _users.where((u) => u.hasZone && u.isInside).length;
+    final outsideCount = _users.where((u) => u.hasZone && !u.isInside).length;
 
     return Scaffold(
       appBar: AppBar(
@@ -151,127 +148,108 @@ class _UsersScreenState extends State<UsersScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
           children: [
+            // Filters card
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      "Filter users",
+                      style: t.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
                     TextField(
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.search_rounded),
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.search_rounded),
                         hintText: "Search name / username / contact",
-                        // ✅ no border override -> uses your pill InputDecorationTheme
+                        suffixIcon: _search.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: "Clear",
+                                onPressed: () => setState(() => _search = ""),
+                                icon: const Icon(Icons.clear_rounded),
+                              ),
                       ),
-                      onChanged: (v) => setState(() {
-                        _search = v;
-                        _page = 0;
-                      }),
-                    ),
-                    const SizedBox(height: 10),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<UserSort>(
-                            initialValue: _sort,
-                            decoration: const InputDecoration(
-                              labelText: "Sort",
-                              // ✅ no border override
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: UserSort.name,
-                                child: Text("Name"),
-                              ),
-                              DropdownMenuItem(
-                                value: UserSort.username,
-                                child: Text("Username"),
-                              ),
-                              DropdownMenuItem(
-                                value: UserSort.lastSeen,
-                                child: Text("Last seen"),
-                              ),
-                              DropdownMenuItem(
-                                value: UserSort.zone,
-                                child: Text("Zone assigned"),
-                              ),
-                              DropdownMenuItem(
-                                value: UserSort.status,
-                                child: Text("Inside/Outside"),
-                              ),
-                            ],
-                            onChanged: (v) => setState(() {
-                              _sort = v ?? UserSort.name;
-                            }),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        IconButton(
-                          tooltip: _asc ? "Ascending" : "Descending",
-                          onPressed: () => setState(() => _asc = !_asc),
-                          icon: Icon(
-                            _asc
-                                ? Icons.arrow_upward_rounded
-                                : Icons.arrow_downward_rounded,
-                          ),
-                        ),
-                      ],
+                      onChanged: (v) => setState(() => _search = v),
                     ),
 
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
 
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<int>(
-                            initialValue: _rowsPerPage,
-                            decoration: const InputDecoration(
-                              labelText: "Rows",
-                              // ✅ no border override
-                            ),
-                            items: const [
-                              DropdownMenuItem(value: 10, child: Text("10")),
-                              DropdownMenuItem(value: 15, child: Text("15")),
-                              DropdownMenuItem(value: 25, child: Text("25")),
-                              DropdownMenuItem(value: 50, child: Text("50")),
-                            ],
-                            onChanged: (v) => setState(() {
-                              _rowsPerPage = v ?? 10;
-                              _page = 0;
-                            }),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: total == 0 || _page == 0
-                                ? null
-                                : () => setState(() => _page -= 1),
-                            icon: const Icon(Icons.chevron_left_rounded),
-                            label: const Text("Prev"),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: total == 0 || end >= total
-                                ? null
-                                : () => setState(() => _page += 1),
-                            icon: const Icon(Icons.chevron_right_rounded),
-                            label: const Text("Next"),
-                          ),
-                        ),
-                      ],
+                    Text(
+                      "Zone",
+                      style: t.bodySmall?.copyWith(fontWeight: FontWeight.w800),
                     ),
-
                     const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _ChoiceChip(
+                          selected: _zoneFilter == ZoneFilter.all,
+                          label: "All (${_users.length})",
+                          onTap: () =>
+                              setState(() => _zoneFilter = ZoneFilter.all),
+                        ),
+                        _ChoiceChip(
+                          selected: _zoneFilter == ZoneFilter.assigned,
+                          label: "Assigned ($assignedCount)",
+                          onTap: () =>
+                              setState(() => _zoneFilter = ZoneFilter.assigned),
+                        ),
+                        _ChoiceChip(
+                          selected: _zoneFilter == ZoneFilter.none,
+                          label: "No zone ($noneCount)",
+                          onTap: () =>
+                              setState(() => _zoneFilter = ZoneFilter.none),
+                        ),
+                      ],
+                    ),
 
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        total == 0 ? "0 users" : "$start–$end of $total",
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
+                    const SizedBox(height: 12),
+
+                    Text(
+                      "Status",
+                      style: t.bodySmall?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _ChoiceChip(
+                          selected: _statusFilter == StatusFilter.all,
+                          label: "All",
+                          onTap: () =>
+                              setState(() => _statusFilter = StatusFilter.all),
+                        ),
+                        _ChoiceChip(
+                          selected: _statusFilter == StatusFilter.inside,
+                          label: "Inside ($insideCount)",
+                          onTap: () => setState(
+                            () => _statusFilter = StatusFilter.inside,
+                          ),
+                          color: AppTokens.success,
+                        ),
+                        _ChoiceChip(
+                          selected: _statusFilter == StatusFilter.outside,
+                          label: "Outside ($outsideCount)",
+                          onTap: () => setState(
+                            () => _statusFilter = StatusFilter.outside,
+                          ),
+                          color: AppTokens.danger,
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 10),
+                    Text(
+                      "Showing ${list.length} of ${_users.length}",
+                      style: t.bodySmall,
                     ),
                   ],
                 ),
@@ -290,14 +268,14 @@ class _UsersScreenState extends State<UsersScreen> {
                 padding: const EdgeInsets.only(top: 24),
                 child: Center(child: Text(_error!)),
               )
-            else if (total == 0)
+            else if (list.isEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 24),
-                child: Center(child: Text("No users yet.")),
+                child: Center(child: Text("No users match your filters.")),
               )
             else
-              ..._paged.map(
-                (u) => _UserCard(
+              ...list.map(
+                (u) => _ExpandableUserCard(
                   user: u,
                   onZone: () async {
                     await Navigator.push(
@@ -344,14 +322,64 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 }
 
-class _UserCard extends StatelessWidget {
+class _ChoiceChip extends StatelessWidget {
+  final bool selected;
+  final String label;
+  final VoidCallback onTap;
+  final Color? color;
+
+  const _ChoiceChip({
+    required this.selected,
+    required this.label,
+    required this.onTap,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    final bg = selected
+        ? (color ?? cs.primary).withAlpha(34)
+        : cs.surface.withAlpha(18);
+
+    final fg = selected ? (color ?? cs.primary) : cs.onSurface.withAlpha(220);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? (color ?? cs.primary).withAlpha(120)
+                : Theme.of(context).dividerColor.withAlpha(120),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: fg,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExpandableUserCard extends StatefulWidget {
   final UserModel user;
   final VoidCallback onZone;
   final VoidCallback? onTrack;
   final VoidCallback? onLogs;
   final VoidCallback? onCsv;
 
-  const _UserCard({
+  const _ExpandableUserCard({
     required this.user,
     required this.onZone,
     required this.onTrack,
@@ -360,139 +388,193 @@ class _UserCard extends StatelessWidget {
   });
 
   @override
+  State<_ExpandableUserCard> createState() => _ExpandableUserCardState();
+}
+
+class _ExpandableUserCardState extends State<_ExpandableUserCard> {
+  bool _open = false;
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final t = Theme.of(context).textTheme;
-
     final border = Theme.of(context).dividerColor;
 
-    final statusColor = !user.hasZone
+    final u = widget.user;
+
+    final statusColor = !u.hasZone
         ? border
-        : (user.isInside ? AppTokens.success : AppTokens.danger);
+        : (u.isInside ? AppTokens.success : AppTokens.danger);
 
-    final zoneBtnStyle = FilledButton.styleFrom(
-      backgroundColor: AppTokens.success,
-      foregroundColor: Colors.white,
-    );
-
-    final trackBtnStyle = FilledButton.styleFrom(
-      backgroundColor: AppTokens.danger,
-      foregroundColor: Colors.white,
-    );
-
-    final csvBtnStyle = FilledButton.styleFrom(
-      backgroundColor: AppTokens.warning,
-      foregroundColor: const Color(0xFF3B2A00),
-    );
+    final statusText = !u.hasZone
+        ? "No zone"
+        : (u.isInside ? "Inside" : "Outside");
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: cs.primary.withAlpha(36),
-                  foregroundColor: cs.primary,
-                  child: Text(
-                    user.username.isNotEmpty
-                        ? user.username[0].toUpperCase()
-                        : "?",
-                    style: const TextStyle(fontWeight: FontWeight.w900),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: cs.primary.withAlpha(36),
+                    foregroundColor: cs.primary,
+                    child: Text(
+                      u.username.isNotEmpty ? u.username[0].toUpperCase() : "?",
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        user.displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: t.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
+                  const SizedBox(width: 10),
+
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          u.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
+                        const SizedBox(height: 2),
+                        Text(
+                          "@${u.username} • ${u.contact}",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(width: 8),
+
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: statusColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            statusText,
+                            style: t.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        "@${user.username} • Last seen: ${user.lastSeenLocalText}",
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: t.bodySmall,
+                      const SizedBox(height: 6),
+                      Icon(
+                        _open
+                            ? Icons.expand_less_rounded
+                            : Icons.expand_more_rounded,
                       ),
                     ],
                   ),
-                ),
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: statusColor,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
+          ),
 
-            const SizedBox(height: 10),
+          if (_open) ...[
+            const Divider(height: 1),
 
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                Chip(
-                  label: Text(user.hasZone ? "Zone: Assigned" : "Zone: None"),
-                ),
-                Chip(
-                  label: Text(
-                    !user.hasZone
-                        ? "Status: —"
-                        : (user.isInside ? "Inside" : "Outside"),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _pill("Last seen: ${u.lastSeenLocalText}"),
+                      _pill(u.hasZone ? "Zone: Assigned" : "Zone: None"),
+                      _pill(
+                        !u.hasZone
+                            ? "Status: —"
+                            : "Status: ${u.isInside ? "Inside" : "Outside"}",
+                      ),
+                    ],
                   ),
-                ),
-                Chip(label: Text("Contact: ${user.contact}")),
-              ],
-            ),
 
-            const SizedBox(height: 12),
+                  const SizedBox(height: 12),
 
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                FilledButton.icon(
-                  style: zoneBtnStyle,
-                  onPressed: onZone,
-                  icon: const Icon(Icons.my_location_rounded),
-                  label: Text(
-                    user.hasZone ? "View / Update Zone" : "Assign Zone",
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppTokens.success,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: widget.onZone,
+                        icon: const Icon(Icons.my_location_rounded),
+                        label: Text(
+                          u.hasZone ? "View / Update Zone" : "Assign Zone",
+                        ),
+                      ),
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppTokens.danger,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: widget.onTrack,
+                        icon: const Icon(Icons.location_searching_rounded),
+                        label: const Text("Track"),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: widget.onLogs,
+                        icon: const Icon(Icons.receipt_long_rounded),
+                        label: const Text("Logs"),
+                      ),
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppTokens.warning,
+                          foregroundColor: const Color(0xFF3B2A00),
+                        ),
+                        onPressed: widget.onCsv,
+                        icon: const Icon(Icons.download_rounded),
+                        label: const Text("CSV"),
+                      ),
+                    ],
                   ),
-                ),
-                FilledButton.icon(
-                  style: trackBtnStyle,
-                  onPressed: onTrack,
-                  icon: const Icon(Icons.location_searching_rounded),
-                  label: const Text("Track"),
-                ),
-                OutlinedButton.icon(
-                  onPressed: onLogs,
-                  icon: const Icon(Icons.receipt_long_rounded),
-                  label: const Text("Logs"),
-                ),
-                FilledButton.icon(
-                  style: csvBtnStyle,
-                  onPressed: onCsv,
-                  icon: const Icon(Icons.download_rounded),
-                  label: const Text("CSV"),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
-        ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pill(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.black.withAlpha(10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black.withAlpha(18)),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
       ),
     );
   }

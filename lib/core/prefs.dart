@@ -3,7 +3,7 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
 const _kAuth = "adminAuth";
-const _kTheme = "adminTheme"; // system/light/dark
+const _kTheme = "adminTheme"; // light/dark only
 
 /// This MUST be overridden in main.dart
 final sharedPrefsProvider = Provider<SharedPreferences>((ref) {
@@ -11,7 +11,9 @@ final sharedPrefsProvider = Provider<SharedPreferences>((ref) {
 });
 
 final authProvider = StateProvider<bool>((ref) => false);
-final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.system);
+
+// ✅ default = dark (no system)
+final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.dark);
 
 /// App bootstrap (loads auth + theme once)
 final bootstrapProvider = Provider<Future<void>>((ref) async {
@@ -21,13 +23,11 @@ final bootstrapProvider = Provider<Future<void>>((ref) async {
   final authed = p.getBool(_kAuth) ?? false;
   ref.read(authProvider.notifier).state = authed;
 
-  // theme
-  final t = p.getString(_kTheme) ?? "system";
-  ref.read(themeModeProvider.notifier).state = t == "light"
+  // theme (light/dark only)
+  final t = p.getString(_kTheme) ?? "dark";
+  ref.read(themeModeProvider.notifier).state = (t == "light")
       ? ThemeMode.light
-      : t == "dark"
-      ? ThemeMode.dark
-      : ThemeMode.system;
+      : ThemeMode.dark;
 });
 
 Future<void> setAuthed(WidgetRef ref, bool v) async {
@@ -36,36 +36,23 @@ Future<void> setAuthed(WidgetRef ref, bool v) async {
   ref.read(authProvider.notifier).state = v;
 }
 
-Future<void> cycleTheme(WidgetRef ref) async {
+// ✅ Toggle only: light <-> dark
+Future<void> toggleTheme(WidgetRef ref) async {
   final p = ref.read(sharedPrefsProvider);
   final current = ref.read(themeModeProvider);
 
-  final next = current == ThemeMode.system
-      ? ThemeMode.light
-      : current == ThemeMode.light
-      ? ThemeMode.dark
-      : ThemeMode.system;
-
+  final next = current == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
   ref.read(themeModeProvider.notifier).state = next;
 
-  final str = next == ThemeMode.light
-      ? "light"
-      : next == ThemeMode.dark
-      ? "dark"
-      : "system";
-
-  await p.setString(_kTheme, str);
+  await p.setString(_kTheme, next == ThemeMode.light ? "light" : "dark");
 }
 
+// ✅ Set only light/dark (no system)
 Future<void> setThemeMode(WidgetRef ref, ThemeMode mode) async {
-  final p = await SharedPreferences.getInstance();
-  ref.read(themeModeProvider.notifier).state = mode;
+  final p = ref.read(sharedPrefsProvider);
 
-  final str = mode == ThemeMode.light
-      ? "light"
-      : mode == ThemeMode.dark
-      ? "dark"
-      : "system";
+  final safe = (mode == ThemeMode.light) ? ThemeMode.light : ThemeMode.dark;
+  ref.read(themeModeProvider.notifier).state = safe;
 
-  await p.setString("adminTheme", str);
+  await p.setString(_kTheme, safe == ThemeMode.light ? "light" : "dark");
 }

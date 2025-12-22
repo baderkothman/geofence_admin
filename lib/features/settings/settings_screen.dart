@@ -40,30 +40,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text("Base URL saved")));
-    setState(() {}); // refresh “Current: …”
+    setState(() {});
   }
 
-  ThemeMode _segmentToMode(int idx) {
-    switch (idx) {
-      case 0:
-        return ThemeMode.light;
-      case 1:
-        return ThemeMode.dark;
-      default:
-        return ThemeMode.system;
-    }
-  }
-
-  int _modeToSegment(ThemeMode mode) {
-    switch (mode) {
-      case ThemeMode.light:
-        return 0;
-      case ThemeMode.dark:
-        return 1;
-      case ThemeMode.system:
-        return 2;
-    }
-  }
+  // ✅ light/dark only
+  int _modeToSegment(ThemeMode mode) => (mode == ThemeMode.light) ? 0 : 1;
+  ThemeMode _segmentToMode(int idx) =>
+      (idx == 0) ? ThemeMode.light : ThemeMode.dark;
 
   @override
   Widget build(BuildContext context) {
@@ -86,7 +69,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 10),
 
-                  // Modern, web-like “pill” picker
                   SegmentedButton<int>(
                     segments: const [
                       ButtonSegment(
@@ -98,11 +80,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         value: 1,
                         label: Text("Dark"),
                         icon: Icon(Icons.dark_mode_rounded),
-                      ),
-                      ButtonSegment(
-                        value: 2,
-                        label: Text("System"),
-                        icon: Icon(Icons.settings_suggest_rounded),
                       ),
                     ],
                     selected: {_modeToSegment(widget.themeMode)},
@@ -135,7 +112,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     decoration: const InputDecoration(
                       hintText: "http://192.168.1.xx:3000",
                       prefixIcon: Icon(Icons.link_rounded),
-                      // ✅ no OutlineInputBorder override -> uses theme pill input
                     ),
                   ),
 
@@ -166,7 +142,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
 
                   const SizedBox(height: 10),
-
                   Text("Current: ${AppConfig.baseUrl}", style: t.bodySmall),
                 ],
               ),
