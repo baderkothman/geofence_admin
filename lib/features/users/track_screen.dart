@@ -112,8 +112,8 @@ class _TrackScreenState extends State<TrackScreen> {
 
     final fallback = const LatLng(33.8938, 35.5018); // Beirut
     final center = hasCoords
-        ? LatLng(lat!, lng!)
-        : (hasZone ? LatLng(zoneLat!, zoneLng!) : fallback);
+        ? LatLng(lat, lng)
+        : (hasZone ? LatLng(zoneLat, zoneLng) : fallback);
 
     return Scaffold(
       appBar: AppBar(
@@ -184,8 +184,8 @@ class _TrackScreenState extends State<TrackScreen> {
                                   CircleLayer(
                                     circles: [
                                       CircleMarker(
-                                        point: LatLng(zoneLat!, zoneLng!),
-                                        radius: zoneRadius!,
+                                        point: LatLng(zoneLat, zoneLng),
+                                        radius: zoneRadius,
                                         useRadiusInMeter: true,
                                         color: AppTokens.success.withAlpha(30),
                                         borderStrokeWidth: 2,
@@ -199,7 +199,7 @@ class _TrackScreenState extends State<TrackScreen> {
                                   markers: [
                                     if (hasZone)
                                       Marker(
-                                        point: LatLng(zoneLat!, zoneLng!),
+                                        point: LatLng(zoneLat, zoneLng),
                                         width: 44,
                                         height: 44,
                                         child: const Icon(
@@ -210,7 +210,7 @@ class _TrackScreenState extends State<TrackScreen> {
                                       ),
                                     if (hasCoords)
                                       Marker(
-                                        point: LatLng(lat!, lng!),
+                                        point: LatLng(lat, lng),
                                         width: 54,
                                         height: 54,
                                         child: const Icon(

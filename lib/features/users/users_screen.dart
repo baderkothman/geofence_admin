@@ -103,12 +103,25 @@ class _UsersScreenState extends State<UsersScreen> {
       list = list.where((u) => u.hasZone && !u.isInside);
     }
 
-    // (Optional) Stable ordering so it doesn’t jump around
+    int rank(UserModel u) {
+      if (!u.hasZone) return 0; // no zone
+      if (!u.isInside) return 1; // outside
+      return 2; // inside
+    }
+
+    // Priority ordering: no zone -> outside -> inside
+    // Stable tie-break: name
     final out = list.toList()
-      ..sort(
-        (a, b) =>
-            a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
-      );
+      ..sort((a, b) {
+        final ra = rank(a);
+        final rb = rank(b);
+        if (ra != rb) return ra.compareTo(rb);
+
+        return a.displayName.toLowerCase().compareTo(
+          b.displayName.toLowerCase(),
+        );
+      });
+
     return out;
   }
 

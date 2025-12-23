@@ -26,11 +26,27 @@ class _LogsScreenState extends State<LogsScreen> {
     _fetch(initial: true);
   }
 
+  Future<List<dynamic>> _getListFlexible(String path) async {
+    // ApiClient.getList expects a JSON array.
+    // Some APIs might return { data: [...] } or { rows: [...] }.
+    // We try to support both without changing ApiClient.
+    final raw = await _api.getList(path);
+    return raw;
+  }
+
   Future<void> _fetch({bool initial = false}) async {
     try {
       if (initial) setState(() => _loading = true);
 
-      final data = await _api.getList("/api/logs?userId=${widget.userId}");
+      // ✅ Your web dashboard uses /api/alerts as logs source.
+      // We use it as primary.
+      List<dynamic> data;
+      try {
+        data = await _getListFlexible("/api/alerts?userId=${widget.userId}");
+      } catch (e) {
+        // Fallback (only if your backend also has /api/logs)
+        data = await _getListFlexible("/api/logs?userId=${widget.userId}");
+      }
 
       if (!mounted) return;
       setState(() {
@@ -38,10 +54,11 @@ class _LogsScreenState extends State<LogsScreen> {
         _error = null;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = "Failed to load logs";
+        _error =
+            "Failed to load logs. (Tried /api/alerts and /api/logs for this user)";
         _loading = false;
       });
     }
@@ -57,10 +74,30 @@ class _LogsScreenState extends State<LogsScreen> {
   }
 
   ({String title, String subtitle, String? trailing}) _format(dynamic item) {
-    // Backend can return a string or a JSON map. We handle both.
+    // Works for:
+    // - alert objects: { alert_type, occurred_at, username, ... }
+    // - generic logs: { type/message/created_at/... }
     if (item is Map) {
       final m = Map<String, dynamic>.from(item);
 
+      // Prefer alert fields
+      final alertType = (m["alert_type"] ?? "").toString().toLowerCase();
+      final isEnter = alertType == "enter";
+      final isExit = alertType == "exit";
+
+      if (isEnter || isExit) {
+        final who =
+            (m["username"] ?? m["user"] ?? "User #${m["user_id"] ?? "?"}")
+                .toString();
+        final at = (m["occurred_at"] ?? m["created_at"] ?? m["at"])?.toString();
+        return (
+          title: isEnter ? "Entered zone" : "Left zone",
+          subtitle: who,
+          trailing: at,
+        );
+      }
+
+      // Generic logs fallback
       final type = (m["type"] ?? m["event"] ?? m["action"] ?? "Log").toString();
       final message = (m["message"] ?? m["msg"] ?? m["details"] ?? "")
           .toString();
@@ -68,22 +105,14 @@ class _LogsScreenState extends State<LogsScreen> {
       final at =
           (m["occurred_at"] ?? m["created_at"] ?? m["timestamp"] ?? m["at"])
               ?.toString();
-      final where = (m["where"] ?? m["location"] ?? "").toString();
-
-      final subtitleParts = <String>[];
-      if (message.trim().isNotEmpty) subtitleParts.add(message.trim());
-      if (where.trim().isNotEmpty) subtitleParts.add(where.trim());
 
       return (
         title: type,
-        subtitle: subtitleParts.isEmpty
-            ? m.toString()
-            : subtitleParts.join("\n"),
-        trailing: at?.trim().isEmpty == true ? null : at,
+        subtitle: message.trim().isEmpty ? m.toString() : message,
+        trailing: (at?.trim().isEmpty ?? true) ? null : at,
       );
     }
 
-    // default string
     final s = item.toString();
     return (title: "Log", subtitle: s, trailing: null);
   }
@@ -109,7 +138,6 @@ class _LogsScreenState extends State<LogsScreen> {
         child: ListView(
           padding: const EdgeInsets.all(12),
           children: [
-            // Search header (web-like)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -119,14 +147,14 @@ class _LogsScreenState extends State<LogsScreen> {
                     Text(
                       "Filter logs",
                       style: t.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(height: 10),
                     TextField(
                       decoration: InputDecoration(
                         prefixIcon: const Icon(Icons.search_rounded),
-                        hintText: "Search by any text (type, message, time...)",
+                        hintText: "Search by any text (type, user, time...)",
                         suffixIcon: _query.isEmpty
                             ? null
                             : IconButton(
@@ -146,9 +174,7 @@ class _LogsScreenState extends State<LogsScreen> {
                 ),
               ),
             ),
-
             const SizedBox(height: 12),
-
             if (_loading)
               const Padding(
                 padding: EdgeInsets.only(top: 40),
@@ -166,9 +192,7 @@ class _LogsScreenState extends State<LogsScreen> {
               )
             else
               ...List.generate(list.length, (i) {
-                final it = list[i];
-                final f = _format(it);
-
+                final f = _format(list[i]);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Card(
@@ -176,10 +200,9 @@ class _LogsScreenState extends State<LogsScreen> {
                       leading: CircleAvatar(child: Text("${i + 1}")),
                       title: Text(
                         f.title,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+                        style: const TextStyle(fontWeight: FontWeight.w900),
                       ),
                       subtitle: Text(f.subtitle),
-                      isThreeLine: f.subtitle.contains("\n"),
                       trailing: f.trailing == null
                           ? null
                           : Text(
