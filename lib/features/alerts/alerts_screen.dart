@@ -131,7 +131,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
           : ListView.separated(
               padding: const EdgeInsets.all(12),
               itemCount: _alerts.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (context, _) => const SizedBox(height: 8),
               itemBuilder: (_, i) {
                 final a = _alerts[i];
                 final dt = DateTime.tryParse(a.occurredAt)?.toLocal();

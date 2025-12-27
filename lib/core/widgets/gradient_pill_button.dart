@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import "package:flutter/material.dart";
 
 class GradientPillButton extends StatelessWidget {
   final String label;
@@ -16,6 +16,9 @@ class GradientPillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 0.40 * 255 = 102
+    const shadowAlpha = 102;
+
     return Opacity(
       opacity: onPressed == null ? 0.45 : 1,
       child: Container(
@@ -26,7 +29,7 @@ class GradientPillButton extends StatelessWidget {
             BoxShadow(
               blurRadius: 24,
               offset: const Offset(0, 10),
-              color: colors.last.withOpacity(0.40),
+              color: colors.last.withAlpha(shadowAlpha),
             ),
           ],
         ),
