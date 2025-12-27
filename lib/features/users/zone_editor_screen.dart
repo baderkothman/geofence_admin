@@ -81,20 +81,20 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
 
     setState(() => _saving = true);
     try {
-      await _api.postJson("/api/users/zone", {
-        "userId": widget.user.id,
-        "lat": c.latitude,
-        "lng": c.longitude,
-        "radiusM": _radius,
+      // ✅ Correct API + correct keys (snake_case)
+      await _api.putJson("/api/users/${widget.user.id}", {
+        "zone_center_lat": c.latitude,
+        "zone_center_lng": c.longitude,
+        "zone_radius_m": _radius.round(), // important: store as int
       });
 
       if (!mounted) return;
       Navigator.pop(context);
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("Failed to save zone")));
+      ).showSnackBar(SnackBar(content: Text("Failed to save zone: $e")));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -124,160 +124,159 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
           ),
         ],
       ),
-      body: ListView(
+      body: Padding(
         padding: const EdgeInsets.all(14),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Zone map",
-                    style: t.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    "Tap anywhere to set the zone center.",
-                    style: t.bodySmall,
-                  ),
-                  const SizedBox(height: 12),
-                  ClipRRect(
+        child: Column(
+          children: [
+            // Bigger map
+            Expanded(
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: ClipRRect(
                     borderRadius: BorderRadius.circular(AppTokens.radius),
-                    child: SizedBox(
-                      height: 320,
-                      width: double.infinity,
-                      child: FlutterMap(
-                        mapController: _map,
-                        options: MapOptions(
-                          initialCenter: center,
-                          initialZoom: _center == null ? 13 : 16,
-                          onTap: (tapPos, point) => _setCenter(point),
-                          interactionOptions: const InteractionOptions(
-                            flags: InteractiveFlag.all,
-                          ),
+                    child: FlutterMap(
+                      mapController: _map,
+                      options: MapOptions(
+                        initialCenter: center,
+                        initialZoom: _center == null ? 13 : 16,
+                        onTap: (_, p) => _setCenter(p),
+                        interactionOptions: const InteractionOptions(
+                          flags: InteractiveFlag.all,
                         ),
-                        children: [
-                          TileLayer(
-                            urlTemplate:
-                                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                            userAgentPackageName: "geofence_admin",
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                          userAgentPackageName: "geofence_admin",
+                        ),
+                        if (_center != null)
+                          CircleLayer(
+                            circles: [
+                              CircleMarker(
+                                point: _center!,
+                                radius: _radius,
+                                useRadiusInMeter: true,
+                                color: AppTokens.success.withAlpha(30),
+                                borderStrokeWidth: 2,
+                                borderColor: AppTokens.success.withAlpha(170),
+                              ),
+                            ],
                           ),
-                          if (_center != null)
-                            CircleLayer(
-                              circles: [
-                                CircleMarker(
-                                  point: _center!,
-                                  radius: _radius,
-                                  useRadiusInMeter: true,
-                                  color: AppTokens.success.withAlpha(30),
-                                  borderStrokeWidth: 2,
-                                  borderColor: AppTokens.success.withAlpha(170),
+                        if (_center != null)
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: _center!,
+                                width: 54,
+                                height: 54,
+                                child: const Icon(
+                                  Icons.location_on_rounded,
+                                  color: AppTokens.danger,
+                                  size: 54,
                                 ),
-                              ],
-                            ),
-                          if (_center != null)
-                            MarkerLayer(
-                              markers: [
-                                Marker(
-                                  point: _center!,
-                                  width: 54,
-                                  height: 54,
-                                  child: const Icon(
-                                    Icons.location_on_rounded,
-                                    color: AppTokens.danger,
-                                    size: 54,
-                                  ),
-                                ),
-                              ],
-                            ),
-                        ],
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Zone center",
+                      style: t.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 10),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _latCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                              signed: true,
+                            ),
+                            onChanged: (_) {
+                              if (_typing) return;
+                              final lat = _lat;
+                              final lng = _lng;
+                              if (lat == null || lng == null) return;
+                              _setCenter(LatLng(lat, lng));
+                            },
+                            decoration: const InputDecoration(
+                              labelText: "Latitude",
+                              prefixIcon: Icon(Icons.my_location_rounded),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _lngCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                              signed: true,
+                            ),
+                            onChanged: (_) {
+                              if (_typing) return;
+                              final lat = _lat;
+                              final lng = _lng;
+                              if (lat == null || lng == null) return;
+                              _setCenter(LatLng(lat, lng));
+                            },
+                            decoration: const InputDecoration(
+                              labelText: "Longitude",
+                              prefixIcon: Icon(Icons.my_location_rounded),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    Text(
+                      "Radius (meters)",
+                      style: t.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      "Current: ${_radius.toStringAsFixed(0)} m",
+                      style: t.bodySmall,
+                    ),
+                    Slider(
+                      value: _radius,
+                      min: 50,
+                      max: 2000,
+                      divisions: 39,
+                      label: "${_radius.toStringAsFixed(0)} m",
+                      onChanged: _saving
+                          ? null
+                          : (v) => setState(() => _radius = v),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-
-          const SizedBox(height: 12),
-
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Zone center",
-                    style: t.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 10),
-
-                  TextField(
-                    controller: _latCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                      signed: true,
-                    ),
-                    onChanged: (_) {
-                      if (_typing) return;
-                      final lat = _lat;
-                      final lng = _lng;
-                      if (lat == null || lng == null) return;
-                      _setCenter(LatLng(lat, lng));
-                    },
-                    decoration: const InputDecoration(
-                      labelText: "Latitude",
-                      prefixIcon: Icon(Icons.my_location_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  TextField(
-                    controller: _lngCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                      signed: true,
-                    ),
-                    onChanged: (_) {
-                      if (_typing) return;
-                      final lat = _lat;
-                      final lng = _lng;
-                      if (lat == null || lng == null) return;
-                      _setCenter(LatLng(lat, lng));
-                    },
-                    decoration: const InputDecoration(
-                      labelText: "Longitude",
-                      prefixIcon: Icon(Icons.my_location_rounded),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  Text(
-                    "Radius (meters)",
-                    style: t.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    "Current: ${_radius.toStringAsFixed(0)} m",
-                    style: t.bodySmall,
-                  ),
-                  Slider(
-                    value: _radius,
-                    min: 50,
-                    max: 2000,
-                    divisions: 39,
-                    label: "${_radius.toStringAsFixed(0)} m",
-                    onChanged: (v) => setState(() => _radius = v),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

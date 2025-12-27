@@ -23,14 +23,17 @@ class GeofenceAdminApp extends ConsumerWidget {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           title: "Geofence Admin",
-          themeMode: themeMode, // ✅ light/dark only now
+          themeMode: themeMode,
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
           home: loading
               ? const Scaffold(body: Center(child: CircularProgressIndicator()))
               : (authed
                     ? AppShell(
-                        onLogout: () => setAuthed(ref, false),
+                        onLogout: () {
+                          // ignore: discarded_futures
+                          logout(ref);
+                        },
                         themeMode: themeMode,
                         onThemeMode: (m) async => setThemeMode(ref, m),
                       )

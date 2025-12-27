@@ -3,18 +3,13 @@ import "package:shared_preferences/shared_preferences.dart";
 class AppConfig {
   static const String _prefsKey = "api_base_url";
 
-  // Your PC LAN IP + backend port
   static const String serverIp = "192.168.1.21";
   static const String serverPort = "4001";
 
-  /// Works for REAL phones on the same Wi-Fi
   static const String lanUrl = "http://$serverIp:$serverPort";
-
-  /// Useful presets (emulator/simulator)
   static const String androidEmulatorUrl = "http://10.0.2.2:$serverPort";
   static const String iosSimulatorUrl = "http://localhost:$serverPort";
 
-  /// Optional: ready-to-use presets (no lint warnings, and useful for UI later)
   static const Map<String, String> presetUrls = {
     "LAN (real device on Wi-Fi)": lanUrl,
     "Android Emulator (10.0.2.2)": androidEmulatorUrl,
@@ -26,8 +21,6 @@ class AppConfig {
   static String get defaultBaseUrl {
     const dartDefine = String.fromEnvironment("API_BASE_URL", defaultValue: "");
     if (dartDefine.trim().isNotEmpty) return _normalize(dartDefine);
-
-    // Default safest choice for your case (real devices on Wi-Fi)
     return lanUrl;
   }
 
@@ -52,13 +45,18 @@ class AppConfig {
 
   static Future<void> resetBaseUrlToDefault() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_prefsKey);
     baseUrl = _normalize(defaultBaseUrl);
     await prefs.setString(_prefsKey, baseUrl);
   }
 
   static String _normalize(String url) {
     var v = url.trim();
+
+    // If user typed without scheme, default to http
+    if (!v.startsWith("http://") && !v.startsWith("https://")) {
+      v = "http://$v";
+    }
+
     while (v.endsWith("/")) {
       v = v.substring(0, v.length - 1);
     }
