@@ -1,10 +1,18 @@
+// D:\geofence_project\geofence_admin\lib\core\theme\app_tokens.dart
+
 import "package:flutter/material.dart";
 
+/// Design tokens used to keep the app’s UI consistent.
+///
+/// This includes:
+/// - shared radius values
+/// - light/dark palette colors
+/// - semantic colors (success/danger/warning)
 class AppTokens {
-  // Matches your CSS radius: 1.25rem ≈ 20px
+  /// Base radius used across cards and containers.
   static const double radius = 20;
 
-  // Light (close to your HSL tokens)
+  // Light theme palette
   static const lightBackground = Color(0xFFFCFAF8);
   static const lightForeground = Color(0xFF1D2930);
   static const lightCard = Color(0xFFFFFFFF);
@@ -15,7 +23,7 @@ class AppTokens {
   static const lightBorder = Color(0xFFDCE2E5);
   static const lightSurfaceSoft = Color(0xFFF4F5F6);
 
-  // Dark (close to your HSL tokens)
+  // Dark theme palette
   static const darkBackground = Color(0xFF0F1729);
   static const darkForeground = Color(0xFFF3F4F6);
   static const darkCard = Color(0xFF121B31);
@@ -26,6 +34,7 @@ class AppTokens {
   static const darkBorder = Color(0xFF394960);
   static const darkSurfaceSoft = Color(0xFF16213B);
 
+  // Semantic colors
   static const success = Color(0xFF2BAB7C);
   static const danger = Color(0xFFD92626);
   static const warning = Color(0xFFFFC61A);

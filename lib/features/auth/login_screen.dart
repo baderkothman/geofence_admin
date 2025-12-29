@@ -1,3 +1,5 @@
+// D:\geofence_project\geofence_admin\lib\features\auth\login_screen.dart
+
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
@@ -5,6 +7,13 @@ import "../../core/api_client.dart";
 import "../../core/config.dart";
 import "../../core/prefs.dart";
 
+/// Admin login screen.
+///
+/// Calls `/api/login` with username/password, then:
+/// - if success => sets UI auth state to true (persisted)
+/// - cookies are captured automatically by ApiClient and stored in prefs
+///
+/// The UI also displays current API Base URL for quick debugging.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -20,6 +29,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _loading = false;
   String? _error;
 
+  /// Attempts login against the backend.
+  ///
+  /// Expected response shape:
+  /// - `{ "success": true }` on success
+  /// - non-2xx with JSON body on failure (ApiClient throws)
   Future<void> _login() async {
     if (_loading) return;
 
@@ -34,7 +48,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         "password": _p.text,
       });
 
-      // Your API returns: { "success": true } (or 401 with JSON message)
       final ok = res["success"] == true;
       final msg = (res["message"] is String) ? res["message"] as String : null;
 
@@ -45,9 +58,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         return;
       }
 
+      // Marks UI as authed; bootstrap logic also verifies cookie existence on next launch.
       await setAuthed(ref, true);
     } catch (e) {
-      // ApiClient throws Exception("HTTP ...: body") on non-2xx
       setState(() {
         _error = "Login failed: ${e.toString()}";
       });
@@ -89,10 +102,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     textAlign: TextAlign.center,
                     style: t.bodySmall,
                   ),
-
                   const SizedBox(height: 10),
-
-                  // Helpful while you’re fixing networking
                   Text(
                     "API: ${AppConfig.baseUrl}",
                     textAlign: TextAlign.center,
@@ -101,9 +111,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-
                   const SizedBox(height: 18),
-
                   TextField(
                     controller: _u,
                     textInputAction: TextInputAction.next,
@@ -114,7 +122,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-
                   TextField(
                     controller: _p,
                     obscureText: true,
@@ -126,9 +133,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       prefixIcon: Icon(Icons.lock_rounded),
                     ),
                   ),
-
                   const SizedBox(height: 14),
-
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
@@ -141,7 +146,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                       ),
                     ),
-
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(

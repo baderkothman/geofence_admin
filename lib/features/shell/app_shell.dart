@@ -1,7 +1,18 @@
+// D:\geofence_project\geofence_admin\lib\features\shell\app_shell.dart
+
 import "package:flutter/material.dart";
 import "../users/users_screen.dart";
 import "../alerts/alerts_screen.dart";
 
+/// Main application shell after authentication.
+///
+/// Uses:
+/// - Bottom Navigation (Material 3 NavigationBar)
+/// - IndexedStack to preserve tab state
+///
+/// Tabs:
+/// 1) Users
+/// 2) Alerts
 class AppShell extends StatefulWidget {
   final VoidCallback onLogout;
   final ThemeMode themeMode;
@@ -32,7 +43,7 @@ class _AppShellState extends State<AppShell> {
       const AlertsScreen(),
     ];
 
-    // Safety: if you hot-reload after removing a tab, index might be out of range
+    // Defensive: hot reload or tab changes can sometimes keep an old index.
     if (_index >= pages.length) _index = 0;
 
     return Scaffold(

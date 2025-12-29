@@ -1,3 +1,5 @@
+// D:\geofence_project\geofence_admin\lib\features\users\users_screen.dart
+
 import "dart:async";
 import "package:flutter/material.dart";
 import "package:url_launcher/url_launcher.dart";
@@ -11,15 +13,29 @@ import "../logs/logs_screen.dart";
 import "track_screen.dart";
 import "zone_editor_screen.dart";
 
+/// Filter for whether a user has an assigned zone.
 enum ZoneFilter { all, assigned, none }
 
+/// Filter for whether a user is currently inside or outside their zone.
 enum StatusFilter { all, inside, outside }
 
+/// Users management screen.
+///
+/// Responsibilities:
+/// - Fetch users periodically.
+/// - Provide search and filtering.
+/// - Open zone editor.
+/// - Open tracking view.
+/// - Open per-user logs.
+/// - Download per-user alerts CSV.
+/// - Toggle theme immediately from the AppBar button.
 class UsersScreen extends StatefulWidget {
   final VoidCallback onLogout;
 
-  // ✅ add theme toggle hooks here
+  /// Current theme mode from app state (Riverpod).
   final ThemeMode themeMode;
+
+  /// Setter for theme mode (persists to SharedPreferences via prefs.dart).
   final Future<void> Function(ThemeMode) onThemeMode;
 
   const UsersScreen({
@@ -49,6 +65,8 @@ class _UsersScreenState extends State<UsersScreen> {
   void initState() {
     super.initState();
     _fetch(initial: true);
+
+    // Lightweight polling for near-real-time dashboard updates.
     _timer = Timer.periodic(const Duration(seconds: 3), (_) => _fetch());
   }
 
@@ -58,6 +76,10 @@ class _UsersScreenState extends State<UsersScreen> {
     super.dispose();
   }
 
+  /// Fetches users from the backend.
+  ///
+  /// The UI excludes admin users from this list because the admin dashboard
+  /// is for managing tracked users, not admins.
   Future<void> _fetch({bool initial = false}) async {
     try {
       if (initial) setState(() => _loading = true);
@@ -84,6 +106,13 @@ class _UsersScreenState extends State<UsersScreen> {
     }
   }
 
+  /// Applies search + filters + sorting.
+  ///
+  /// Sorting rule:
+  /// - users without zone first
+  /// - then users outside zone
+  /// - then users inside zone
+  /// Within each group, alphabetical by displayName.
   List<UserModel> get _filtered {
     final q = _search.trim().toLowerCase();
     Iterable<UserModel> list = _users;
@@ -128,18 +157,23 @@ class _UsersScreenState extends State<UsersScreen> {
     return out;
   }
 
+  /// Opens a CSV export for a specific user via external browser/app.
   Future<void> _openCsvForUser(int userId) async {
     final url = "${AppConfig.baseUrl}/api/alerts?userId=$userId&format=csv";
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
-  // ✅ one-tap theme toggle (no popup)
+  /// Toggles theme in one tap (no modal, no menu).
+  ///
+  /// Theme is persisted via `widget.onThemeMode`, which writes to SharedPreferences.
   Future<void> _toggleTheme() async {
     final isDark = widget.themeMode == ThemeMode.dark;
     final next = isDark ? ThemeMode.light : ThemeMode.dark;
     await widget.onThemeMode(next);
+
+    // The provider-driven rebuild usually updates the icon, but we ensure immediate feedback.
     if (!mounted) return;
-    setState(() {}); // harmless; ensures icon updates instantly
+    setState(() {});
   }
 
   @override
@@ -158,7 +192,6 @@ class _UsersScreenState extends State<UsersScreen> {
       appBar: AppBar(
         title: const Text("Users"),
         actions: [
-          // ✅ nicer single button: tap toggles immediately
           IconButton(
             tooltip: isDark ? "Switch to Light" : "Switch to Dark",
             onPressed: _toggleTheme,
@@ -196,7 +229,6 @@ class _UsersScreenState extends State<UsersScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-
                     TextField(
                       decoration: InputDecoration(
                         prefixIcon: const Icon(Icons.search_rounded),
@@ -211,9 +243,7 @@ class _UsersScreenState extends State<UsersScreen> {
                       ),
                       onChanged: (v) => setState(() => _search = v),
                     ),
-
                     const SizedBox(height: 12),
-
                     Text(
                       "Zone",
                       style: t.bodySmall?.copyWith(fontWeight: FontWeight.w800),
@@ -243,9 +273,7 @@ class _UsersScreenState extends State<UsersScreen> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 12),
-
                     Text(
                       "Status",
                       style: t.bodySmall?.copyWith(fontWeight: FontWeight.w800),
@@ -279,7 +307,6 @@ class _UsersScreenState extends State<UsersScreen> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 10),
                     Text(
                       "Showing ${list.length} of ${_users.length}",
@@ -289,9 +316,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 ),
               ),
             ),
-
             const SizedBox(height: 12),
-
             if (_loading)
               const Padding(
                 padding: EdgeInsets.only(top: 40),
@@ -356,6 +381,7 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 }
 
+/// Simple pill-style chip used for filters.
 class _ChoiceChip extends StatelessWidget {
   final bool selected;
   final String label;
@@ -376,7 +402,6 @@ class _ChoiceChip extends StatelessWidget {
     final bg = selected
         ? (color ?? cs.primary).withAlpha(34)
         : cs.surface.withAlpha(18);
-
     final fg = selected ? (color ?? cs.primary) : cs.onSurface.withAlpha(220);
 
     return InkWell(
@@ -406,7 +431,13 @@ class _ChoiceChip extends StatelessWidget {
   }
 }
 
-// keep your _ExpandableUserCard as-is (unchanged)
+/// Expandable user card showing zone/inside status and action buttons.
+///
+/// Actions:
+/// - Assign/Update zone
+/// - Track location
+/// - View logs
+/// - Download CSV
 class _ExpandableUserCard extends StatefulWidget {
   final UserModel user;
   final VoidCallback onZone;
@@ -440,7 +471,6 @@ class _ExpandableUserCardState extends State<_ExpandableUserCard> {
     final statusColor = !u.hasZone
         ? border
         : (u.isInside ? AppTokens.success : AppTokens.danger);
-
     final statusText = !u.hasZone
         ? "No zone"
         : (u.isInside ? "Inside" : "Outside");
@@ -592,6 +622,7 @@ class _ExpandableUserCardState extends State<_ExpandableUserCard> {
     );
   }
 
+  /// Small “pill” label used for compact info rows inside the expanded view.
   Widget _pill(String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),

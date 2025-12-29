@@ -1,6 +1,18 @@
+// D:\geofence_project\geofence_admin\lib\features\logs\logs_screen.dart
+
 import "package:flutter/material.dart";
 import "../../core/api_client.dart";
 
+/// Logs screen for a specific user.
+///
+/// This screen is intentionally flexible:
+/// - Primary source: `/api/alerts?userId=...` (matches your web dashboard usage)
+/// - Optional fallback: `/api/logs?userId=...` if your backend provides it
+///
+/// The UI supports:
+/// - Refresh
+/// - Free-text search across any serialized content
+/// - Adaptive formatting for “alert-like” rows and generic logs
 class LogsScreen extends StatefulWidget {
   final int userId;
   final String username;
@@ -26,25 +38,25 @@ class _LogsScreenState extends State<LogsScreen> {
     _fetch(initial: true);
   }
 
+  /// Fetches a list response for endpoints that are expected to return arrays.
+  ///
+  /// If in the future some endpoint returns `{ data: [...] }` or `{ rows: [...] }`,
+  /// you can extend this helper without changing ApiClient.
   Future<List<dynamic>> _getListFlexible(String path) async {
-    // ApiClient.getList expects a JSON array.
-    // Some APIs might return { data: [...] } or { rows: [...] }.
-    // We try to support both without changing ApiClient.
-    final raw = await _api.getList(path);
-    return raw;
+    return _api.getList(path);
   }
 
+  /// Loads logs for this user.
+  ///
+  /// Attempts alerts endpoint first, then falls back to logs endpoint.
   Future<void> _fetch({bool initial = false}) async {
     try {
       if (initial) setState(() => _loading = true);
 
-      // ✅ Your web dashboard uses /api/alerts as logs source.
-      // We use it as primary.
       List<dynamic> data;
       try {
         data = await _getListFlexible("/api/alerts?userId=${widget.userId}");
-      } catch (e) {
-        // Fallback (only if your backend also has /api/logs)
+      } catch (_) {
         data = await _getListFlexible("/api/logs?userId=${widget.userId}");
       }
 
@@ -54,7 +66,7 @@ class _LogsScreenState extends State<LogsScreen> {
         _error = null;
         _loading = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _error =
@@ -64,6 +76,7 @@ class _LogsScreenState extends State<LogsScreen> {
     }
   }
 
+  /// Applies a simple free-text filter across the serialized item.
   List<dynamic> get _filtered {
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return _items;
@@ -73,14 +86,15 @@ class _LogsScreenState extends State<LogsScreen> {
         .toList();
   }
 
+  /// Formats an item into title/subtitle/trailing UI parts.
+  ///
+  /// Handles:
+  /// - alert objects with `{ alert_type, occurred_at, username, ... }`
+  /// - generic logs with `{ type/message/created_at/... }`
   ({String title, String subtitle, String? trailing}) _format(dynamic item) {
-    // Works for:
-    // - alert objects: { alert_type, occurred_at, username, ... }
-    // - generic logs: { type/message/created_at/... }
     if (item is Map) {
       final m = Map<String, dynamic>.from(item);
 
-      // Prefer alert fields
       final alertType = (m["alert_type"] ?? "").toString().toLowerCase();
       final isEnter = alertType == "enter";
       final isExit = alertType == "exit";
@@ -97,11 +111,9 @@ class _LogsScreenState extends State<LogsScreen> {
         );
       }
 
-      // Generic logs fallback
       final type = (m["type"] ?? m["event"] ?? m["action"] ?? "Log").toString();
       final message = (m["message"] ?? m["msg"] ?? m["details"] ?? "")
           .toString();
-
       final at =
           (m["occurred_at"] ?? m["created_at"] ?? m["timestamp"] ?? m["at"])
               ?.toString();

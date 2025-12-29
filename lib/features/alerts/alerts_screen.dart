@@ -1,3 +1,5 @@
+// D:\geofence_project\geofence_admin\lib\features\alerts\alerts_screen.dart
+
 import "dart:async";
 import "package:flutter/material.dart";
 import "package:shared_preferences/shared_preferences.dart";
@@ -8,6 +10,16 @@ import "../../core/config.dart";
 import "../../core/theme/app_tokens.dart";
 import "../../models/alert_model.dart";
 
+/// Alerts screen showing recent enter/exit events.
+///
+/// Behavior:
+/// - Polls `/api/alerts` periodically.
+/// - Maintains a “cleared until” marker in SharedPreferences.
+/// - Filters alerts so cleared items do not reappear (even with timezone differences).
+/// - Sorts by time descending and limits to latest 50 for performance.
+///
+/// CSV Export:
+/// - `/api/alerts?format=csv` is opened in an external browser/app.
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
 
@@ -23,9 +35,10 @@ class _AlertsScreenState extends State<AlertsScreen> {
   bool _loading = true;
   String? _error;
 
+  /// Guard to prevent overlapping fetch cycles (useful with fast polling).
   bool _fetching = false;
 
-  // ✅ store as epoch ms (more reliable than strings/timezones)
+  /// SharedPreferences key storing the last “clear” time as UTC epoch milliseconds.
   static const _clearedKeyMs = "alerts_cleared_until_ms";
 
   @override
@@ -41,16 +54,18 @@ class _AlertsScreenState extends State<AlertsScreen> {
     super.dispose();
   }
 
+  /// Parses a backend timestamp string into DateTime when possible.
+  ///
+  /// Supports:
+  /// - ISO strings
+  /// - "YYYY-MM-DD HH:MM:SS" (converted to an ISO-like string)
   DateTime? _parseOccurredAt(String s) {
     final raw = s.trim();
     if (raw.isEmpty) return null;
 
-    // 1) Try normal parse (handles ISO, and many formats)
     final d1 = DateTime.tryParse(raw);
     if (d1 != null) return d1;
 
-    // 2) Common backend format: "YYYY-MM-DD HH:MM:SS"
-    // Convert to ISO-ish: "YYYY-MM-DDTHH:MM:SS"
     final isoLike = raw.contains(" ") ? raw.replaceFirst(" ", "T") : raw;
     final d2 = DateTime.tryParse(isoLike);
     if (d2 != null) return d2;
@@ -58,6 +73,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
     return null;
   }
 
+  /// Converts a DateTime to UTC epoch milliseconds.
   int? _toEpochMsUtc(DateTime? dt) {
     if (dt == null) return null;
     return dt.toUtc().millisecondsSinceEpoch;
@@ -65,8 +81,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   Future<int?> _clearedUntilMs() async {
     final prefs = await SharedPreferences.getInstance();
-    final ms = prefs.getInt(_clearedKeyMs);
-    return ms;
+    return prefs.getInt(_clearedKeyMs);
   }
 
   Future<void> _setClearedUntilMs(int ms) async {
@@ -74,6 +89,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
     await prefs.setInt(_clearedKeyMs, ms);
   }
 
+  /// Loads alerts, applies clear-filter, sorts, and updates UI state.
   Future<void> _load({bool initial = false}) async {
     if (_fetching) return;
     _fetching = true;
@@ -82,35 +98,32 @@ class _AlertsScreenState extends State<AlertsScreen> {
       if (initial && mounted) setState(() => _loading = true);
 
       final raw = await _api.getList("/api/alerts");
-
       final clearedMs = await _clearedUntilMs();
 
-      // Parse + filter
       final parsed = raw
           .whereType<Map>()
           .map((e) => AlertModel.fromJson(Map<String, dynamic>.from(e)))
           .where((a) {
+            // If user never cleared, show everything.
             if (clearedMs == null) return true;
 
-            final dt = _parseOccurredAt(a.occurredAt);
-            final ts = _toEpochMsUtc(dt);
-
-            // ✅ IMPORTANT:
-            // If we cannot parse the time AND user cleared before,
-            // we hide it (this prevents "coming back" forever).
+            // If we cannot parse the timestamp, we do NOT show it after a clear,
+            // to avoid old/unknown alerts reappearing forever.
+            final ts = _toEpochMsUtc(_parseOccurredAt(a.occurredAt));
             if (ts == null) return false;
 
             return ts > clearedMs;
           })
           .toList();
 
-      // Sort by real time (fallback: keep stable)
+      // Sort newest first based on parsed timestamps (fallback to 0).
       parsed.sort((a, b) {
         final ta = _toEpochMsUtc(_parseOccurredAt(a.occurredAt)) ?? 0;
         final tb = _toEpochMsUtc(_parseOccurredAt(b.occurredAt)) ?? 0;
         return tb.compareTo(ta);
       });
 
+      // Limit list length to keep rendering snappy.
       final list = (parsed.length > 50) ? parsed.sublist(0, 50) : parsed;
 
       if (!mounted) return;
@@ -130,16 +143,16 @@ class _AlertsScreenState extends State<AlertsScreen> {
     }
   }
 
+  /// Clears the alert list permanently (from the UI perspective).
+  ///
+  /// We set clearedUntil to the maximum timestamp currently visible (or now),
+  /// ensuring those entries never show again, regardless of timezone formatting.
   Future<void> _clear() async {
-    // ✅ Make "clear" bulletproof:
-    // set clearedUntil to the MAX occurredAt we currently have (or now),
-    // so these alerts can never show again even with timezone differences.
     final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
 
     int maxSeenMs = 0;
     for (final a in _alerts) {
-      final dt = _parseOccurredAt(a.occurredAt);
-      final ms = _toEpochMsUtc(dt);
+      final ms = _toEpochMsUtc(_parseOccurredAt(a.occurredAt));
       if (ms != null && ms > maxSeenMs) maxSeenMs = ms;
     }
 
@@ -150,6 +163,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
     setState(() => _alerts = []);
   }
 
+  /// Opens a CSV export for all alerts via external browser/app.
   Future<void> _downloadAllCsv() async {
     final url = "${AppConfig.baseUrl}/api/alerts?format=csv";
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);

@@ -1,5 +1,14 @@
+// D:\geofence_project\geofence_admin\lib\core\widgets\gradient_pill_button.dart
+
 import "package:flutter/material.dart";
 
+/// A reusable “pill” shaped button with a linear gradient background.
+///
+/// This widget:
+/// - Draws the gradient + shadow using a wrapping Container.
+/// - Uses an ElevatedButton with transparent background to preserve ripple/ink.
+///
+/// If `onPressed` is null, the widget renders at reduced opacity.
 class GradientPillButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
@@ -16,8 +25,8 @@ class GradientPillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 0.40 * 255 = 102
-    const shadowAlpha = 102;
+    // Shadow opacity tuned for a “soft glow” effect without looking heavy.
+    const shadowAlpha = 102; // ~40%
 
     return Opacity(
       opacity: onPressed == null ? 0.45 : 1,

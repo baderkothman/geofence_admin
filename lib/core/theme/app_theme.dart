@@ -1,7 +1,21 @@
+// D:\geofence_project\geofence_admin\lib\core\theme\app_theme.dart
+
 import "package:flutter/material.dart";
 import "app_tokens.dart";
 
+/// Theme builder for the app (Material 3).
+///
+/// Creates a consistent ThemeData for:
+/// - Light mode
+/// - Dark mode
+///
+/// Key customizations:
+/// - ColorScheme tuned to your token palette
+/// - Rounded “pill” inputs
+/// - CardThemeData with borders (instead of elevation)
+/// - NavigationBar indicator color based on alpha
 class AppTheme {
+  /// Light theme configuration.
   static ThemeData light() => _build(
     brightness: Brightness.light,
     background: AppTokens.lightBackground,
@@ -14,6 +28,7 @@ class AppTheme {
     surfaceSoft: AppTokens.lightSurfaceSoft,
   );
 
+  /// Dark theme configuration.
   static ThemeData dark() => _build(
     brightness: Brightness.dark,
     background: AppTokens.darkBackground,
@@ -26,6 +41,7 @@ class AppTheme {
     surfaceSoft: AppTokens.darkSurfaceSoft,
   );
 
+  /// Internal theme builder shared by both light/dark.
   static ThemeData _build({
     required Brightness brightness,
     required Color background,
@@ -51,8 +67,8 @@ class AppTheme {
       onSurface: foreground,
     );
 
-    // replaces withOpacity(0.14/0.18)
-    final navIndicatorAlpha = isDark ? 46 : 36; // 0.18*255≈46, 0.14*255≈36
+    // Indicator alpha tuned separately for light/dark so it reads correctly.
+    final navIndicatorAlpha = isDark ? 46 : 36;
 
     return ThemeData(
       useMaterial3: true,
@@ -68,7 +84,7 @@ class AppTheme {
         scrolledUnderElevation: 0,
       ),
 
-      // ✅ CardThemeData (fixes your error)
+      // Cards are “flat” with border and radius; elevation removed for cleaner UI.
       cardTheme: CardThemeData(
         color: card,
         elevation: 0,
@@ -78,6 +94,7 @@ class AppTheme {
         ),
       ),
 
+      // Pill-like inputs for consistent admin UI.
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: surfaceSoft,

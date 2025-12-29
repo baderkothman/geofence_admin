@@ -1,3 +1,6 @@
+// D:\geofence_project\geofence_admin\lib\app.dart
+
+import "dart:async";
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 
@@ -6,6 +9,12 @@ import "core/theme/app_theme.dart";
 import "features/auth/login_screen.dart";
 import "features/shell/app_shell.dart";
 
+/// Root widget of the Geofence Admin Flutter application.
+///
+/// Responsibilities:
+/// - Wait for bootstrap initialization (SharedPreferences + persisted state).
+/// - Apply theme mode (light/dark).
+/// - Route to login or the main shell based on auth state.
 class GeofenceAdminApp extends ConsumerWidget {
   const GeofenceAdminApp({super.key});
 
@@ -31,11 +40,11 @@ class GeofenceAdminApp extends ConsumerWidget {
               : (authed
                     ? AppShell(
                         onLogout: () {
-                          // ignore: discarded_futures
-                          logout(ref);
+                          // `logout` is async; we intentionally fire-and-forget from a sync callback.
+                          unawaited(logout(ref));
                         },
                         themeMode: themeMode,
-                        onThemeMode: (m) async => setThemeMode(ref, m),
+                        onThemeMode: (m) => setThemeMode(ref, m),
                       )
                     : const LoginScreen()),
         );

@@ -1,3 +1,5 @@
+// D:\geofence_project\geofence_admin\lib\core\api_client.dart
+
 import "dart:async";
 import "dart:convert";
 import "package:flutter/foundation.dart";
@@ -5,13 +7,16 @@ import "package:http/http.dart" as http;
 import "package:shared_preferences/shared_preferences.dart";
 import "config.dart";
 
+/// Base exception type for API errors in this app.
 class ApiException implements Exception {
   final String message;
   ApiException(this.message);
+
   @override
   String toString() => message;
 }
 
+/// Exception for non-2xx responses, including full context.
 class ApiHttpException extends ApiException {
   final int statusCode;
   final String method;
@@ -26,6 +31,7 @@ class ApiHttpException extends ApiException {
   }) : super("HTTP $statusCode $method $uri: $responseBody");
 }
 
+/// Exception for auth failures (401/403), allowing callers to react differently.
 class ApiAuthException extends ApiHttpException {
   ApiAuthException({
     required super.statusCode,
@@ -35,24 +41,38 @@ class ApiAuthException extends ApiHttpException {
   });
 }
 
+/// Minimal HTTP client wrapper that:
+/// - Builds URLs using `AppConfig.baseUrl`
+/// - Sends JSON requests
+/// - Captures and persists cookies (session management)
+/// - Throws rich exceptions for errors
 class ApiClient {
   ApiClient({http.Client? client}) : _client = client ?? http.Client();
   final http.Client _client;
 
-  // New: cookie jar storage (multiple cookies)
+  /// Preferred cookie storage key: JSON map `{ cookieName: cookieValue }`.
   static const String cookieJarKey = "api_cookies";
+
+  /// Legacy cookie storage key: a single string like "sid=....".
   static const String _legacyCookieKey = "api_cookie";
 
+  /// Whether cookies have been loaded from SharedPreferences into memory.
   static bool _cookieLoaded = false;
-  static final Map<String, String> _cookies = {}; // name -> value
 
+  /// In-memory cookie jar (cookie name -> value).
+  static final Map<String, String> _cookies = {};
+
+  /// Loads cookies from storage once per app lifecycle.
+  ///
+  /// Migration behavior:
+  /// - If legacy cookie exists, it is parsed into the jar and stored as JSON map.
   Future<void> _ensureCookiesLoaded() async {
     if (_cookieLoaded) return;
     _cookieLoaded = true;
 
     final prefs = await SharedPreferences.getInstance();
 
-    // Preferred: JSON map
+    // Preferred format: JSON object map.
     final jarJson = prefs.getString(cookieJarKey);
     if (jarJson != null && jarJson.trim().isNotEmpty) {
       try {
@@ -64,27 +84,28 @@ class ApiClient {
           return;
         }
       } catch (_) {
-        // fall through to legacy
+        // If JSON is invalid, fall back to legacy.
       }
     }
 
-    // Legacy: single cookie string "sid=...."
+    // Legacy format: a single cookie header string.
     final legacy = prefs.getString(_legacyCookieKey);
     if (legacy != null && legacy.trim().isNotEmpty) {
       final kv = _parseCookiePairs(legacy);
       _cookies
         ..clear()
         ..addAll(kv);
-      // migrate to jar
       await _saveCookieJar();
     }
   }
 
+  /// Persists the in-memory cookie jar to SharedPreferences.
   Future<void> _saveCookieJar() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(cookieJarKey, jsonEncode(_cookies));
   }
 
+  /// Clears cookies in memory and in SharedPreferences.
   Future<void> clearCookies() async {
     _cookies.clear();
     _cookieLoaded = true;
@@ -93,12 +114,17 @@ class ApiClient {
     await prefs.remove(_legacyCookieKey);
   }
 
+  /// Builds the "Cookie" header value from the in-memory jar.
   String? _cookieHeaderValue() {
     if (_cookies.isEmpty) return null;
-    // "a=b; c=d"
     return _cookies.entries.map((e) => "${e.key}=${e.value}").join("; ");
   }
 
+  /// Captures cookies from the HTTP response `set-cookie` header.
+  ///
+  /// This supports servers that return multiple cookies and handles:
+  /// - comma-separated cookie strings
+  /// - commas inside `Expires=...` attributes
   void _captureSetCookie(http.Response res) {
     final raw = res.headers["set-cookie"];
     if (raw == null || raw.trim().isEmpty) return;
@@ -113,10 +139,9 @@ class ApiClient {
 
       final name = first.substring(0, eq).trim();
       final value = first.substring(eq + 1).trim();
-
       if (name.isEmpty) continue;
 
-      // If server clears cookie with empty value, remove it
+      // If the server clears a cookie by setting empty value, drop it locally.
       if (value.isEmpty) {
         if (_cookies.remove(name) != null) changed = true;
       } else {
@@ -128,16 +153,18 @@ class ApiClient {
     }
 
     if (changed) {
-      // ignore: unawaited_futures
-      _saveCookieJar();
+      // Persist in the background; no UI needs to wait for this.
+      unawaited(_saveCookieJar());
     }
   }
 
+  /// Builds absolute URI from a relative API path using current base URL.
   Uri _u(String path) {
     final p = path.startsWith("/") ? path : "/$path";
     return Uri.parse("${AppConfig.baseUrl}$p");
   }
 
+  /// Builds HTTP headers, including JSON headers and cookies.
   Future<Map<String, String>> _headers({bool json = true}) async {
     await _ensureCookiesLoaded();
     final cookie = _cookieHeaderValue();
@@ -149,12 +176,13 @@ class ApiClient {
     };
   }
 
+  /// Adds a timeout to HTTP calls to avoid hanging UI indefinitely.
   Future<http.Response> _withTimeout(Future<http.Response> f) {
     return f.timeout(const Duration(seconds: 20));
   }
 
+  /// Decodes response bytes safely into text.
   String _bodyText(http.Response res) {
-    // safer than res.body for non-utf8 / odd encodings
     try {
       return utf8.decode(res.bodyBytes);
     } catch (_) {
@@ -162,13 +190,19 @@ class ApiClient {
     }
   }
 
+  /// Debug logging for API calls (only in debug mode).
   void _debugLog(String msg) {
     if (kDebugMode) {
-      // ignore: avoid_print
-      print(msg);
+      debugPrint(msg);
     }
   }
 
+  /// Core request executor used by all public methods.
+  ///
+  /// - Logs request/response when in debug mode.
+  /// - Captures cookies from response.
+  /// - Throws ApiAuthException for 401/403.
+  /// - Throws ApiHttpException for any non-2xx.
   Future<http.Response> _request(
     String method,
     Uri uri, {
@@ -234,6 +268,7 @@ class ApiClient {
     return res;
   }
 
+  /// GET endpoint expecting a JSON object response.
   Future<Map<String, dynamic>> getJson(String path) async {
     final uri = _u(path);
     final res = await _request(
@@ -247,6 +282,7 @@ class ApiClient {
     throw ApiException("Invalid JSON (expected object) from GET $uri");
   }
 
+  /// GET endpoint expecting a JSON array response.
   Future<List<dynamic>> getList(String path) async {
     final uri = _u(path);
     final res = await _request(
@@ -260,6 +296,7 @@ class ApiClient {
     throw ApiException("Invalid JSON (expected list) from GET $uri");
   }
 
+  /// POST JSON request. Returns a JSON object if present; otherwise returns `{ ok: true }`.
   Future<Map<String, dynamic>> postJson(
     String path,
     Map<String, dynamic> body,
@@ -280,6 +317,7 @@ class ApiClient {
     return {"ok": true};
   }
 
+  /// PUT JSON request. Returns a JSON object if present; otherwise returns `{ ok: true }`.
   Future<Map<String, dynamic>> putJson(
     String path,
     Map<String, dynamic> body,
@@ -300,6 +338,9 @@ class ApiClient {
     return {"ok": true};
   }
 
+  /// DELETE request with optional JSON body.
+  ///
+  /// Returns a JSON object if present; otherwise returns `{ ok: true }`.
   Future<Map<String, dynamic>> deleteJson(
     String path, {
     Map<String, dynamic>? body,
@@ -321,7 +362,7 @@ class ApiClient {
   }
 }
 
-/// Parse "a=b; c=d" into map
+/// Parses a cookie header string like "a=b; c=d" into a name/value map.
 Map<String, String> _parseCookiePairs(String cookieHeader) {
   final out = <String, String>{};
   final parts = cookieHeader.split(";");
@@ -337,21 +378,23 @@ Map<String, String> _parseCookiePairs(String cookieHeader) {
   return out;
 }
 
-/// Safely split a combined Set-Cookie header into individual cookie strings.
-/// Handles commas inside Expires=... attribute.
+/// Splits a combined Set-Cookie header into individual cookie strings.
+///
+/// Some servers combine multiple cookies into one header separated by commas.
+/// The tricky part is that `Expires=...` also contains commas. This parser
+/// treats commas as separators only when not inside an Expires attribute.
 List<String> _splitSetCookieHeader(String header) {
   final out = <String>[];
   final buf = StringBuffer();
   bool inExpires = false;
 
-  // We track "expires=" case-insensitively
+  // A small rolling window to detect "expires=" case-insensitively.
   String tail = "";
 
   for (int i = 0; i < header.length; i++) {
     final ch = header[i];
     buf.write(ch);
 
-    // update tail
     tail = (tail + ch).toLowerCase();
     if (tail.length > 12) tail = tail.substring(tail.length - 12);
 
@@ -359,16 +402,15 @@ List<String> _splitSetCookieHeader(String header) {
       inExpires = true;
     }
 
+    // Expires attribute ends at ';'
     if (inExpires && ch == ";") {
       inExpires = false;
-      // reset tail to avoid false positives
       tail = "";
     }
 
-    // Separator comma (only if NOT inside expires)
+    // A comma splits cookies only when not inside Expires
     if (!inExpires && ch == ",") {
       final s = buf.toString();
-      // remove the comma from current cookie
       final cleaned = s.substring(0, s.length - 1).trim();
       if (cleaned.isNotEmpty) out.add(cleaned);
       buf.clear();

@@ -1,3 +1,5 @@
+// D:\geofence_project\geofence_admin\lib\features\users\zone_editor_screen.dart
+
 import "package:flutter/material.dart";
 import "package:flutter_map/flutter_map.dart";
 import "package:latlong2/latlong.dart";
@@ -6,6 +8,13 @@ import "../../core/api_client.dart";
 import "../../core/theme/app_tokens.dart";
 import "../../models/user_model.dart";
 
+/// Screen for assigning or updating a user's circular geofence zone.
+///
+/// Features:
+/// - Tap map to set center.
+/// - Type lat/lng manually (kept in sync with map).
+/// - Slider to adjust radius in meters.
+/// - Saves zone to backend using snake_case keys expected by your API.
 class ZoneEditorScreen extends StatefulWidget {
   final UserModel user;
 
@@ -26,12 +35,15 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
   late final TextEditingController _lngCtrl;
 
   bool _saving = false;
+
+  /// Prevents feedback loops while we update the text fields programmatically.
   bool _typing = false;
 
   @override
   void initState() {
     super.initState();
 
+    // Initialize radius with safe bounds to avoid extreme UI / backend values.
     _radius = (widget.user.zoneRadiusM ?? 150).clamp(50, 2000).toDouble();
 
     final initLat = widget.user.zoneCenterLat;
@@ -55,21 +67,32 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
   double? get _lat => double.tryParse(_latCtrl.text.trim());
   double? get _lng => double.tryParse(_lngCtrl.text.trim());
 
+  /// Updates the center point and optionally moves the map camera.
+  ///
+  /// Also syncs the latitude/longitude text fields to match the chosen point.
   void _setCenter(LatLng p, {bool moveMap = true}) {
     setState(() => _center = p);
 
+    // Write into fields without triggering recursive map updates.
     _typing = true;
     _latCtrl.text = p.latitude.toStringAsFixed(6);
     _lngCtrl.text = p.longitude.toStringAsFixed(6);
     _typing = false;
 
     if (moveMap) {
+      // flutter_map move can throw if controller isn't attached yet; ignore safely.
       try {
         _map.move(p, _map.camera.zoom < 15 ? 16 : _map.camera.zoom);
       } catch (_) {}
     }
   }
 
+  /// Persists zone center/radius for this user to the backend.
+  ///
+  /// Uses snake_case keys:
+  /// - zone_center_lat
+  /// - zone_center_lng
+  /// - zone_radius_m
   Future<void> _save() async {
     final c = _center;
     if (c == null) {
@@ -81,11 +104,10 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
 
     setState(() => _saving = true);
     try {
-      // ✅ Correct API + correct keys (snake_case)
       await _api.putJson("/api/users/${widget.user.id}", {
         "zone_center_lat": c.latitude,
         "zone_center_lng": c.longitude,
-        "zone_radius_m": _radius.round(), // important: store as int
+        "zone_radius_m": _radius.round(),
       });
 
       if (!mounted) return;
@@ -104,7 +126,8 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
 
-    final fallback = const LatLng(33.8938, 35.5018); // Beirut
+    // Beirut used as a sensible fallback when user has no zone assigned yet.
+    const fallback = LatLng(33.8938, 35.5018);
     final center = _center ?? fallback;
 
     return Scaffold(
@@ -128,7 +151,6 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
         padding: const EdgeInsets.all(14),
         child: Column(
           children: [
-            // Bigger map
             Expanded(
               child: Card(
                 child: Padding(
@@ -185,9 +207,7 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
                 ),
               ),
             ),
-
             const SizedBox(height: 12),
-
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(14),
@@ -201,7 +221,6 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-
                     Row(
                       children: [
                         Expanded(
@@ -247,9 +266,7 @@ class _ZoneEditorScreenState extends State<ZoneEditorScreen> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 16),
-
                     Text(
                       "Radius (meters)",
                       style: t.titleMedium?.copyWith(

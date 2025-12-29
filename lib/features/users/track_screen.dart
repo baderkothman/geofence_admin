@@ -1,3 +1,5 @@
+// D:\geofence_project\geofence_admin\lib\features\users\track_screen.dart
+
 import "dart:async";
 import "package:flutter/material.dart";
 import "package:flutter_map/flutter_map.dart";
@@ -8,6 +10,18 @@ import "../../core/api_client.dart";
 import "../../core/theme/app_tokens.dart";
 import "../../models/user_model.dart";
 
+/// Live tracking screen for a single user.
+///
+/// Behavior:
+/// - Polls `/api/users` periodically and finds the target user by id.
+/// - Displays:
+///   - Zone circle (if assigned)
+///   - Zone center marker
+///   - Last known position marker (colored by inside/outside)
+/// - Offers:
+///   - Manual refresh
+///   - Pause/Resume auto-refresh (following)
+///   - Open last location in Google Maps
 class TrackScreen extends StatefulWidget {
   final int userId;
   final String username;
@@ -25,13 +39,18 @@ class _TrackScreenState extends State<TrackScreen> {
 
   UserModel? _user;
   bool _loading = true;
+
+  /// When true, periodic polling will update the UI and recenter the map.
   bool _following = true;
+
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _load(initial: true);
+
+    // Polling interval chosen to match your admin dashboard “near real-time” feeling.
     _timer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (_following) _load();
     });
@@ -43,6 +62,10 @@ class _TrackScreenState extends State<TrackScreen> {
     super.dispose();
   }
 
+  /// Loads the latest user data and recenters the map if location is available.
+  ///
+  /// This screen fetches from `/api/users` for simplicity, then picks the user by id.
+  /// If you later add `/api/users/:id`, you can optimize this to a single-user endpoint.
   Future<void> _load({bool initial = false}) async {
     try {
       if (initial) setState(() => _loading = true);
@@ -68,7 +91,7 @@ class _TrackScreenState extends State<TrackScreen> {
         _loading = false;
       });
 
-      // Move map to last location if available, else zone center
+      // Prefer last known location; fallback to zone center.
       final lat = u?.lastLatitude;
       final lng = u?.lastLongitude;
       final zLat = u?.zoneCenterLat;
@@ -97,6 +120,7 @@ class _TrackScreenState extends State<TrackScreen> {
     }
   }
 
+  /// Opens the last known user location in Google Maps (external).
   Future<void> _openGoogleMaps() async {
     final lat = _user?.lastLatitude;
     final lng = _user?.lastLongitude;
@@ -111,7 +135,6 @@ class _TrackScreenState extends State<TrackScreen> {
     final t = Theme.of(context).textTheme;
 
     final u = _user;
-
     final lat = u?.lastLatitude;
     final lng = u?.lastLongitude;
 
@@ -119,7 +142,7 @@ class _TrackScreenState extends State<TrackScreen> {
     final zLng = u?.zoneCenterLng;
     final zR = u?.zoneRadiusM;
 
-    final fallback = const LatLng(33.8938, 35.5018);
+    const fallback = LatLng(33.8938, 35.5018);
     final center = (lat != null && lng != null)
         ? LatLng(lat, lng)
         : ((zLat != null && zLng != null) ? LatLng(zLat, zLng) : fallback);
@@ -168,7 +191,6 @@ class _TrackScreenState extends State<TrackScreen> {
                                     "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                                 userAgentPackageName: "geofence_admin",
                               ),
-
                               if (zLat != null && zLng != null && zR != null)
                                 CircleLayer(
                                   circles: [
@@ -184,7 +206,6 @@ class _TrackScreenState extends State<TrackScreen> {
                                     ),
                                   ],
                                 ),
-
                               MarkerLayer(
                                 markers: [
                                   if (zLat != null && zLng != null)
@@ -219,9 +240,7 @@ class _TrackScreenState extends State<TrackScreen> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 12),
-
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(14),
@@ -258,9 +277,7 @@ class _TrackScreenState extends State<TrackScreen> {
                               ),
                             ],
                           ),
-
                           const SizedBox(height: 10),
-
                           Row(
                             children: [
                               Expanded(
@@ -289,9 +306,7 @@ class _TrackScreenState extends State<TrackScreen> {
                                 ? "—"
                                 : (u.isInside ? "Yes" : "No"),
                           ),
-
                           const SizedBox(height: 12),
-
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton.icon(
@@ -313,6 +328,7 @@ class _TrackScreenState extends State<TrackScreen> {
   }
 }
 
+/// Compact label/value row used in the track detail card.
 class _InfoRow extends StatelessWidget {
   final String label;
   final String value;

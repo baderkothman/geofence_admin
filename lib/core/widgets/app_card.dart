@@ -1,5 +1,15 @@
+// D:\geofence_project\geofence_admin\lib\core\widgets\app_card.dart
+
 import "package:flutter/material.dart";
 
+/// A custom card container with a consistent visual style across the app.
+///
+/// Differences from a plain `Card`:
+/// - Uses a controlled shadow intensity depending on theme brightness.
+/// - Applies a consistent border radius.
+/// - Applies a border matching the current divider color.
+///
+/// Useful for layouts where you want the “card look” without Material elevation.
 class AppCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets padding;
@@ -14,11 +24,12 @@ class AppCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    // Shadow base color differs by theme for better realism.
     final shadowBase = theme.brightness == Brightness.dark
         ? Colors.black
         : const Color(0xFF0F172A);
 
-    // 0.55 * 255 ≈ 140, 0.08 * 255 ≈ 20
+    // Opacity tuned to keep shadows subtle, especially in light mode.
     final shadowAlpha = theme.brightness == Brightness.dark ? 140 : 20;
 
     return Container(
