@@ -1,7 +1,6 @@
 import "package:flutter/material.dart";
 import "../users/users_screen.dart";
 import "../alerts/alerts_screen.dart";
-import "../settings/settings_screen.dart";
 
 class AppShell extends StatefulWidget {
   final VoidCallback onLogout;
@@ -25,13 +24,16 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      UsersScreen(onLogout: widget.onLogout),
-      const AlertsScreen(),
-      SettingsScreen(
+      UsersScreen(
+        onLogout: widget.onLogout,
         themeMode: widget.themeMode,
         onThemeMode: widget.onThemeMode,
       ),
+      const AlertsScreen(),
     ];
+
+    // Safety: if you hot-reload after removing a tab, index might be out of range
+    if (_index >= pages.length) _index = 0;
 
     return Scaffold(
       body: IndexedStack(index: _index, children: pages),
@@ -46,10 +48,6 @@ class _AppShellState extends State<AppShell> {
           NavigationDestination(
             icon: Icon(Icons.notifications_active_rounded),
             label: "Alerts",
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_rounded),
-            label: "Settings",
           ),
         ],
       ),

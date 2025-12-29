@@ -17,7 +17,17 @@ enum StatusFilter { all, inside, outside }
 
 class UsersScreen extends StatefulWidget {
   final VoidCallback onLogout;
-  const UsersScreen({super.key, required this.onLogout});
+
+  // ✅ add theme toggle hooks here
+  final ThemeMode themeMode;
+  final Future<void> Function(ThemeMode) onThemeMode;
+
+  const UsersScreen({
+    super.key,
+    required this.onLogout,
+    required this.themeMode,
+    required this.onThemeMode,
+  });
 
   @override
   State<UsersScreen> createState() => _UsersScreenState();
@@ -76,10 +86,8 @@ class _UsersScreenState extends State<UsersScreen> {
 
   List<UserModel> get _filtered {
     final q = _search.trim().toLowerCase();
-
     Iterable<UserModel> list = _users;
 
-    // Search
     if (q.isNotEmpty) {
       list = list.where((u) {
         final name = u.displayName.toLowerCase();
@@ -89,14 +97,12 @@ class _UsersScreenState extends State<UsersScreen> {
       });
     }
 
-    // Zone filter
     if (_zoneFilter == ZoneFilter.assigned) {
       list = list.where((u) => u.hasZone);
     } else if (_zoneFilter == ZoneFilter.none) {
       list = list.where((u) => !u.hasZone);
     }
 
-    // Status filter (only meaningful if zone assigned)
     if (_statusFilter == StatusFilter.inside) {
       list = list.where((u) => u.hasZone && u.isInside);
     } else if (_statusFilter == StatusFilter.outside) {
@@ -104,19 +110,16 @@ class _UsersScreenState extends State<UsersScreen> {
     }
 
     int rank(UserModel u) {
-      if (!u.hasZone) return 0; // no zone
-      if (!u.isInside) return 1; // outside
-      return 2; // inside
+      if (!u.hasZone) return 0;
+      if (!u.isInside) return 1;
+      return 2;
     }
 
-    // Priority ordering: no zone -> outside -> inside
-    // Stable tie-break: name
     final out = list.toList()
       ..sort((a, b) {
         final ra = rank(a);
         final rb = rank(b);
         if (ra != rb) return ra.compareTo(rb);
-
         return a.displayName.toLowerCase().compareTo(
           b.displayName.toLowerCase(),
         );
@@ -130,6 +133,15 @@ class _UsersScreenState extends State<UsersScreen> {
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
+  // ✅ one-tap theme toggle (no popup)
+  Future<void> _toggleTheme() async {
+    final isDark = widget.themeMode == ThemeMode.dark;
+    final next = isDark ? ThemeMode.light : ThemeMode.dark;
+    await widget.onThemeMode(next);
+    if (!mounted) return;
+    setState(() {}); // harmless; ensures icon updates instantly
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
@@ -140,10 +152,20 @@ class _UsersScreenState extends State<UsersScreen> {
     final insideCount = _users.where((u) => u.hasZone && u.isInside).length;
     final outsideCount = _users.where((u) => u.hasZone && !u.isInside).length;
 
+    final isDark = widget.themeMode == ThemeMode.dark;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Users"),
         actions: [
+          // ✅ nicer single button: tap toggles immediately
+          IconButton(
+            tooltip: isDark ? "Switch to Light" : "Switch to Dark",
+            onPressed: _toggleTheme,
+            icon: Icon(
+              isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+            ),
+          ),
           IconButton(
             tooltip: "Refresh",
             onPressed: () => _fetch(initial: true),
@@ -161,7 +183,6 @@ class _UsersScreenState extends State<UsersScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
           children: [
-            // Filters card
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -385,6 +406,7 @@ class _ChoiceChip extends StatelessWidget {
   }
 }
 
+// keep your _ExpandableUserCard as-is (unchanged)
 class _ExpandableUserCard extends StatefulWidget {
   final UserModel user;
   final VoidCallback onZone;
@@ -442,7 +464,6 @@ class _ExpandableUserCardState extends State<_ExpandableUserCard> {
                     ),
                   ),
                   const SizedBox(width: 10),
-
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -465,9 +486,7 @@ class _ExpandableUserCardState extends State<_ExpandableUserCard> {
                       ],
                     ),
                   ),
-
                   const SizedBox(width: 8),
-
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
@@ -503,10 +522,8 @@ class _ExpandableUserCardState extends State<_ExpandableUserCard> {
               ),
             ),
           ),
-
           if (_open) ...[
             const Divider(height: 1),
-
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
               child: Column(
@@ -525,9 +542,7 @@ class _ExpandableUserCardState extends State<_ExpandableUserCard> {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 12),
-
                   Wrap(
                     spacing: 10,
                     runSpacing: 10,
